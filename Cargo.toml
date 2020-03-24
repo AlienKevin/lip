@@ -6,6 +6,7 @@ edition = "2018"
 description = "Lip provides powerful parser combinators for creating reusable and flexible parsers."
 keywords = ["parser", "combinator", "functional"]
 license = "MIT"
+repository = "https://github.com/AlienKevin/lip"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
