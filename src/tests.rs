@@ -14,7 +14,7 @@ fn test_one_of() {
   );
   assert_eq!(
     one_of!(token("a"), token("b"), token("c")).parse("", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseError {
+    ParseResult::ParseErr {
       message: "I'm expecting a `c` but found nothing.".to_string(),
       from: Location { row: 1, col: 1 },
       to: Location { row: 1, col: 1 },
@@ -23,7 +23,7 @@ fn test_one_of() {
   );
   assert_eq!(
     one_of!(token("a"), token("b"), token("c")).parse("w", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseError {
+    ParseResult::ParseErr {
       message: "I'm expecting a `c` but found `w`.".to_string(),
       from: Location { row: 1, col: 1 },
       to: Location { row: 1, col: 2 },
@@ -45,7 +45,7 @@ fn test_chain() {
   );
   assert_eq!(
     chain!(token("a"), token("b"), token("d")).parse("abc", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseError {
+    ParseResult::ParseErr {
       message: "I'm expecting a `d` but found `c`.".to_string(),
       from: Location { row: 1, col: 3 },
       to: Location { row: 1, col: 4 },

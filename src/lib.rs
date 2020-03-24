@@ -1,8 +1,17 @@
+//! # Straight-parse library
+//! 
+//! Straight-parse provides powerful parser combinators for you to
+//! create reusable and flexible parsers.
+
 #[macro_use]
 mod tests;
 
 use std::fmt::*;
 
+/// Add location information to any type.
+/// 
+/// Used by [located](fn.located.html) to add `from` and `to` locations to any captured values
+/// for more precise error messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Located<A> {
   pub value: A,
@@ -10,12 +19,50 @@ pub struct Located<A> {
   pub to: Location,
 }
 
+/// Records the location of a character within the source string.
+/// 
+/// Uses `row` and `col`. The first character of the source is
+/// at row 1 and column 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Location {
   pub row: usize,
   pub col: usize,
 }
 
+/// Records the result of the parser.
+/// 
+/// Similar to the [`std::result::Result`](https://doc.rust-lang.org/std/result/enum.Result.html) type, outputs `ParseOk` if parsing succeeds
+/// and `ParseErr` if parsing fails.
+/// 
+/// `ParseOk` contains:
+/// * input: the part of source string left after parsing finished
+/// * location: the [Location](struct.Location.html) of the end of parse,
+/// * output: the output of the parsing
+/// * state: the final state of the parser
+/// 
+/// `ParseErr` contains:
+/// * message: the message explaining what and why the parse failed
+/// * from: the starting [Location](struct.Location.html) of the error
+/// * to: the ending [Location](struct.Location.html) of the error
+/// * state: the final state of the parser
+/// 
+/// A word about `state`:
+/// Sometimes you want to keep track of extra information outside the current location
+/// and the rest of the source string. For example, you may want to put
+/// different symbols encountered into a symbol table as a replacement mapping
+/// after parsing finished or keep track of the current instruction index.
+/// This library uses `state` to capture any kind of extra information like the ones
+/// we mentioned above during parsing. The only requirement on `state` is implementation
+/// of the `Clone` trait. Here's an example `state`:
+/// ```
+/// #[derive(Clone, Debug)]
+/// pub struct State {
+///   symbol_table: HashMap<String, usize>, // build up a symbol table
+///   instruction_index: usize, // count which instruction we are at
+///   variable_index: usize, // count how many variables we encountered
+/// }
+/// ```
+/// To update `state` during and after parsing, use `update_state`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseResult<'a, Output, State> {
   ParseOk {
@@ -24,7 +71,7 @@ pub enum ParseResult<'a, Output, State> {
     output: Output,
     state: State,
   },
-  ParseError {
+  ParseErr {
     message: String,
     from: Location,
     to: Location,
@@ -33,6 +80,8 @@ pub enum ParseResult<'a, Output, State> {
 }
 
 impl<'a, T, S: Clone> ParseResult<'a, T, S> {
+  /// Map the parse output to a new value if parse succeeds.
+  /// Otherwise, return error as usual.
   pub fn map<U, F: FnOnce(T) -> U>(self, func: F) -> ParseResult<'a, U, S> {
     match self {
       ParseResult::ParseOk { input, location, output, state } =>
@@ -42,10 +91,14 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
           output: func(output),
           state,
         },
-      ParseResult::ParseError { message, from, to, state } =>
-        ParseResult::ParseError { message, from, to, state },
+      ParseResult::ParseErr { message, from, to, state } =>
+        ParseResult::ParseErr { message, from, to, state },
     }
   }
+  /// Map the parse output to a new value if parse succeeds.
+  /// The map function is supplied both the output and the
+  /// state of the parser.
+  /// Otherwise, return error as usual.
   pub fn map_with_state<U, F: FnOnce(T, S) -> U>(self, func: F) -> ParseResult<'a, U, S> {
     match self {
       ParseResult::ParseOk { input, location, output, state } =>
@@ -55,10 +108,12 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
           output: func(output, state.clone()),
           state: state,
         },
-      ParseResult::ParseError { message, from, to, state } =>
-        ParseResult::ParseError { message, from, to, state },
+      ParseResult::ParseErr { message, from, to, state } =>
+        ParseResult::ParseErr { message, from, to, state },
     }
   }
+  /// Map the error message to a new message if parse fails.
+  /// Otherwise, return output as usual.
   pub fn map_err<F: FnOnce(String) -> String>(self, func: F) -> ParseResult<'a, T, S> {
     match self {
       ParseResult::ParseOk { input, location, output, state } =>
@@ -68,8 +123,8 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
           output,
           state,
         },
-      ParseResult::ParseError { message, from, to, state } =>
-        ParseResult::ParseError {
+      ParseResult::ParseErr { message, from, to, state } =>
+        ParseResult::ParseErr {
           message: func(message),
           from,
           to,
@@ -77,18 +132,28 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
         }
     }
   }
+  /// Returns a new parser which is given the current output if parse succeeds.
+  /// Otherwise, return error as usual.
   pub fn and_then<U, F: FnOnce(&'a str, T, Location, S) -> ParseResult<'a, U, S>>(self, func: F) -> ParseResult<'a, U, S> {
     match self {
       ParseResult::ParseOk { input, output, location, state } =>
         func(input, output, location, state),
-      ParseResult::ParseError { message, from, to, state } =>
-        ParseResult::ParseError { message, from, to, state },
+      ParseResult::ParseErr { message, from, to, state } =>
+        ParseResult::ParseErr { message, from, to, state },
     }
   }
 }
 
 pub trait Parser<'a, Output, State: Clone> {
+  /// Run the parser on a given input, starting at
+  /// a given location and state.
   fn parse(&self, input: &'a str, location: Location, state: State) -> ParseResult<'a, Output, State>;
+  /// Map the output to a new output if parse succeeds.
+  /// Otherwise, return error as usual.
+  /// 
+  /// The only difference from the `map` on `ParseResult`
+  /// is that this `map` turns one `Parser` into another while the `map`
+  /// on `ParseResult` turns one `ParseResult` into another.
   fn map<F, NewOutput>(self, map_fn: F) -> BoxedParser<'a, NewOutput, State>
     where
         Self: Sized + 'a,
@@ -99,6 +164,13 @@ pub trait Parser<'a, Output, State: Clone> {
   {
       BoxedParser::new(map(self, map_fn))
   }
+  /// The map function is supplied both the output and the
+  /// state of the parser.
+  /// Otherwise, return error as usual.
+  /// 
+  /// The only difference from the `map_with_state` on `ParseResult`
+  /// is that this `map_with_state` turns one `Parser` into another while the `map_with_state`
+  /// on `ParseResult` turns one `ParseResult` into another.
   fn map_with_state<F, NewOutput>(self, map_fn: F) -> BoxedParser<'a, NewOutput, State>
   where
       Self: Sized + 'a,
@@ -109,6 +181,12 @@ pub trait Parser<'a, Output, State: Clone> {
   {
       BoxedParser::new(map_with_state(self, map_fn))
   }
+  /// Map the error message to a new message if parse fails.
+  /// Otherwise, return output as usual.
+  /// 
+  /// The only difference from the `map_err` on `ParseResult`
+  /// is that this `map_err` turns one `Parser` into another while the `map_err`
+  /// on `ParseResult` turns one `ParseResult` into another.
   fn map_err<F>(self, map_fn: F) -> BoxedParser<'a, Output, State>
     where
         Self: Sized + 'a,
@@ -118,6 +196,12 @@ pub trait Parser<'a, Output, State: Clone> {
   {
       BoxedParser::new(map_err(self, map_fn))
   }
+  /// Returns a new parser which is given the current output if parse succeeds.
+  /// Otherwise, return error as usual.
+  /// 
+  /// The only difference from the `and_then` on `ParseResult`
+  /// is that this `and_then` turns one `Parser` into another while the `and_then`
+  /// on `ParseResult` turns one `ParseResult` into another.
   fn and_then<F, NextParser, NewOutput>(self, f: F) -> BoxedParser<'a, NewOutput, State>
   where
     Self: Sized + 'a,
@@ -129,6 +213,8 @@ pub trait Parser<'a, Output, State: Clone> {
   {
       BoxedParser::new(and_then(self, f))
   }
+  /// Judge if the output meets the requirement using a predicate function
+  /// if the parse succeeds. Otherwise, return error as usual.
   fn pred<F>(self, predicate: F, expecting: &'a str) -> BoxedParser<'a, Output, State>
   where
     Self: Sized + 'a,
@@ -138,6 +224,7 @@ pub trait Parser<'a, Output, State: Clone> {
   {
     BoxedParser::new(pred(self, predicate, expecting))
   }
+  /// Ignore the parse output and return `()` (emtpy tuple)
   fn ignore(self) -> BoxedParser<'a, (), State>
     where
       Self: Sized + 'a,
@@ -146,6 +233,8 @@ pub trait Parser<'a, Output, State: Clone> {
   {
       BoxedParser::new(map(self, |_| ()))
   }
+  /// Update the state given the new output and state of the parse if parse succeeds.
+  /// Otherwise, return error as usual.
   fn update_state<F>(self, f: F) -> BoxedParser<'a, Output, State>
   where
     Self: Sized + 'a,
@@ -167,11 +256,18 @@ where
   }
 }
 
+/// Box `Parser` trait so its size is decidable in compile time.
+/// 
+/// Essentially allocate the `Parser` on the heap in runtime.
+/// Makes passing `Parser` around much easier because types that `impl trait`
+/// may be different under the hood while `BoxedParser` is always a pointer
+/// to a place in the heap.
 pub struct BoxedParser<'a, Output, State> {
   parser: Box<dyn Parser<'a, Output, State> + 'a>,
 }
 
 impl<'a, Output,State> BoxedParser<'a, Output, State> {
+  /// Box any type that implements the `Parser` trait
   pub fn new<P>(parser: P) -> Self
   where
       P: Parser<'a, Output, State> + 'a,
@@ -205,6 +301,7 @@ fn and_then<'a, P, F, A, B, S: Clone + 'a, NextP>(parser: P, f: F) -> impl Parse
     )
 }
 
+/// Parse a given token string.
 pub fn token<'a, S: Clone + 'a>(expected: &'static str) -> BoxedParser<'a, &str, S> {
   BoxedParser::new(
     move |input: &'a str, location: Location, state: S| {
@@ -216,7 +313,7 @@ pub fn token<'a, S: Clone + 'a>(expected: &'static str) -> BoxedParser<'a, &str,
         location: increment_col(expected.len(), location),
         state,
       },
-      _ => ParseResult::ParseError {
+      _ => ParseResult::ParseErr {
         message: format!(
           "I'm expecting a `{}` but found {}.",
           expected,
@@ -257,6 +354,8 @@ fn display_token<T: Display>(token: Option<T>) -> String {
   }
 }
 
+/// Pair up two parsers. Run the left parser, then the right,
+/// and last combine both outputs into a tuple.
 pub fn pair<'a, P1, P2, R1, R2, S: Clone + 'a>(parser1: P1, parser2: P2) -> impl Parser<'a, (R1, R2), S>
 where
   P1: Parser<'a, R1, S>,
@@ -271,7 +370,7 @@ where
       )
 }
 
-pub fn map<'a, P: 'a, F: 'a, A, B, S: Clone + 'a>(parser: P, map_fn: F) -> BoxedParser<'a, B, S>
+fn map<'a, P: 'a, F: 'a, A, B, S: Clone + 'a>(parser: P, map_fn: F) -> BoxedParser<'a, B, S>
 where
   P: Parser<'a, A, S>,
   F: Fn(A) -> B,
@@ -282,7 +381,7 @@ where
   ))
 }
 
-pub fn map_with_state<'a, P: 'a, F: 'a, A, B, S: Clone + 'a>(parser: P, map_fn: F) -> BoxedParser<'a, B, S>
+fn map_with_state<'a, P: 'a, F: 'a, A, B, S: Clone + 'a>(parser: P, map_fn: F) -> BoxedParser<'a, B, S>
 where
   P: Parser<'a, A, S>,
   F: Fn(A, S) -> B,
@@ -300,12 +399,12 @@ where
         output: map_fn(output, next_state.clone()),
         state: next_state,
       },
-      ParseResult::ParseError {
+      ParseResult::ParseErr {
         message,
         from,
         to,
         state: error_state,
-      } => ParseResult::ParseError {
+      } => ParseResult::ParseErr {
         message,
         from,
         to,
@@ -315,7 +414,7 @@ where
   )
 }
 
-pub fn map_err<'a, P, F, A, S: Clone + 'a>(parser: P, map_fn: F) -> impl Parser<'a, A, S>
+fn map_err<'a, P, F, A, S: Clone + 'a>(parser: P, map_fn: F) -> impl Parser<'a, A, S>
 where
   P: Parser<'a, A, S>,
   F: Fn(String) -> String,
@@ -325,19 +424,7 @@ where
   )
 }
 
-pub fn map2<'a, P1, P2, F, A, B, C, S: Clone + 'a>(parser1: P1, parser2: P2, map_fn: F) -> impl Parser<'a, C, S>
-where
-  P1: Parser<'a, A, S>,
-  P2: Parser<'a, B, S>,
-  F: Fn(A, B) -> C,
-{
-  move |input, location, state| parser1.parse(input, location, state).and_then(
-    |input1, output1, location1, state1 | parser2.parse(input1, location1, state1).map(
-      |output2| map_fn(output1, output2)
-    )
-  )
-}
-
+/// Run the left parser, then the right, last keep the left result and discard the right.
 pub fn left<'a, P1: 'a, P2: 'a, R1: 'a, R2: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, R1, S>
 where
   P1: Parser<'a, R1, S>,
@@ -346,6 +433,7 @@ where
   map(pair(parser1, parser2), |(left, _right)| left)
 }
 
+/// Run the left parser, then the right, last keep the right result and discard the left.
 pub fn right<'a, P1: 'a, P2: 'a, R1: 'a, R2: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, R2, S>
 where
   P1: Parser<'a, R1, S>,
@@ -354,6 +442,7 @@ where
   map(pair(parser1, parser2), |(_left, right)| right)
 }
 
+/// Run the parser one or more times and combine each output into a vector of outputs.
 pub fn one_or_more<'a, P, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Vec<A>, S>
 where
   P: Parser<'a, A, S>,
@@ -361,12 +450,17 @@ where
   one_or_more_with_ending(false, parser)
 }
 
+/// Run the parser one or more times and combine each output into a vector of outputs,
+/// until the end of the source string.
+/// 
+/// Returns error even when matching one or more times if parser doesn't
+/// reach the end of input.
 pub fn one_or_more_till_end<'a, P, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Vec<A>, S>
 where
   P: Parser<'a, A, S>,
 {
   one_or_more_with_ending(true, parser)
-} 
+}
 
 fn one_or_more_with_ending<'a, P, A, S: Clone + 'a>(till_end: bool, parser: P) -> impl Parser<'a, Vec<A>, S>
 where
@@ -387,13 +481,13 @@ where
         state = next_state;
         result.push(first_item);
       }
-      ParseResult::ParseError {
+      ParseResult::ParseErr {
         message: error_message,
         from,
         to,
         state
       } => {
-        return ParseResult::ParseError {
+        return ParseResult::ParseErr {
           message: error_message,
           from,
           to,
@@ -415,13 +509,13 @@ where
           state = next_state;
           result.push(next_item);
         },
-        ParseResult::ParseError {
+        ParseResult::ParseErr {
           message: error_message,
           from,
           to,
           state,
         } => if till_end && input != "" {
-          return ParseResult::ParseError {
+          return ParseResult::ParseErr {
             message: error_message,
             from,
             to,
@@ -442,6 +536,7 @@ where
   }
 }
 
+/// Run the parser zero or more times and combine each output into a vector of outputs.
 pub fn zero_or_more<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> BoxedParser<'a, Vec<A>, S>
 where
   P: Parser<'a, A, S>,
@@ -472,6 +567,17 @@ where
   })
 }
 
+/// Match any single character, usually used together with `pred`.
+/// 
+/// Exmaple:
+/// ```
+/// any_char().pred(
+///   | character |
+///   character.is_digit(10)
+///   , "a decimal digit"
+/// )
+/// ```
+/// The above example is parses a decimal digit. See [whole_decimal](fn.whole_decimal.html) for the full code.
 pub fn any_char<'a, S: Clone + 'a>() -> impl Parser<'a, char, S> {
   |input: &'a str, location: Location, state| match input.chars().next() {
     Some(character) => ParseResult::ParseOk {
@@ -480,7 +586,7 @@ pub fn any_char<'a, S: Clone + 'a>() -> impl Parser<'a, char, S> {
       location: increment_col(character.len_utf8(), location),
       state,
     },
-    _ => ParseResult::ParseError {
+    _ => ParseResult::ParseErr {
       message: "I'm expecting any character but reached the end of input.".to_string(),
       from: location,
       to: location,
@@ -508,7 +614,7 @@ where
         state: next_state,
       }
     } else {
-      ParseResult::ParseError {
+      ParseResult::ParseErr {
         message: format!(
           "I'm expecting {} but found {}.",
           expecting,
@@ -520,7 +626,7 @@ where
         state: next_state,
         }
     },
-    _ => ParseResult::ParseError {
+    _ => ParseResult::ParseErr {
       message: format!(
         "I'm expecting {} but found {}.",
         expecting,
@@ -534,6 +640,7 @@ where
   }
 }
 
+/// Parse a single space character.
 pub fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   any_char().pred(
     |character| *character == ' ',
@@ -541,6 +648,9 @@ pub fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   ).ignore()
 }
 
+/// Parse a single newline character.
+/// 
+/// Handles `\r\n` in Windows and `\n` on other platforms.
 pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   BoxedParser::new(
     (move |input, location, state: S| {
@@ -580,12 +690,12 @@ pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
           location: increment_row(1, next_location),
           state: next_state,
         },
-        ParseResult::ParseError {
+        ParseResult::ParseErr {
           message: error_message,
           from,
           to,
           state,
-        } => ParseResult::ParseError {
+        } => ParseResult::ParseErr {
           message: error_message,
           from,
           to,
@@ -596,6 +706,9 @@ pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   )
 }
 
+/// Parsers zero or more newline characters, each with indentations in front.
+/// 
+/// Indentation can also be `""` (no indentation)
 pub fn newline0<'a, S: Clone + 'a>(indent_parser: BoxedParser<'a, (), S>) -> BoxedParser<'a, (), S> {
   zero_or_more(pair(
     indent_parser,
@@ -603,21 +716,27 @@ pub fn newline0<'a, S: Clone + 'a>(indent_parser: BoxedParser<'a, (), S>) -> Box
   )).ignore()
 }
 
+/// Parsers one or more newline characters, each with indentations in front.
+/// 
+/// Indentation can also be `""` (no indentation)
 pub fn newline1<'a, S: Clone + 'a>(indent_parser: BoxedParser<'a, (), S>) -> BoxedParser<'a, (), S> {
-  ignore_chain(vec![
+  pair(
     newline_char(),
     newline0(indent_parser),
-  ])
+  ).ignore()
 }
 
+/// Parse zero or more space characters.
 pub fn space0<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   zero_or_more(space_char()).ignore()
 }
 
+/// Parse one or more space characters.
 pub fn space1<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   one_or_more(space_char()).ignore()
 }
 
+/// Parse an indentation specified the number of spaces.
 pub fn indent<'a, S: Clone + 'a>(number_of_spaces: usize) -> BoxedParser<'a, (), S> {
   repeat(
     number_of_spaces,
@@ -626,6 +745,7 @@ pub fn indent<'a, S: Clone + 'a>(number_of_spaces: usize) -> BoxedParser<'a, (),
   .map_err(move |_| format!("I'm expecting an indentation.\nAll indentations should be {} spaces.", number_of_spaces))
 }
 
+/// Parse a given number of indentations specified the number of spaces.
 pub fn indents<'a, S: Clone + 'a>(number_of_spaces: usize, number_of_indents: usize) -> BoxedParser<'a, (), S> {
   repeat(
     number_of_indents,
@@ -688,6 +808,10 @@ fn repeat<'a, A, P, S: Clone + 'a>(times: usize, parser: P)
   }
 }
 
+/// Parse one of many things.
+/// 
+/// Parser goes through each one option in order until one succeeds.
+/// If none succeeds, return error.
 #[macro_export]
 macro_rules! one_of {
   ($single_parser:expr) => { $single_parser };
@@ -705,7 +829,7 @@ fn either<'a, A, P: 'a, S: Clone + 'a>(parser1: P, parser2: P)
     move |input, location, state: S| {
       let result = match parser1.parse(input, location, state.clone()) {
         ok @ ParseResult::ParseOk {..} => ok,
-        ParseResult::ParseError {..} =>
+        ParseResult::ParseErr {..} =>
           parser2.parse(input, location, state)
       };
       result
@@ -713,6 +837,7 @@ fn either<'a, A, P: 'a, S: Clone + 'a>(parser1: P, parser2: P)
   )
 }
 
+/// Optionally parse something. Returns supplied default value if parse failed.
 pub fn optional<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(default: A, parser: P)
   -> BoxedParser<'a, A, S>
   where
@@ -734,70 +859,59 @@ pub fn optional<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(default: A, parser: P)
   )
 }
 
+/// Parse a newline that maybe preceeded by a comment started with `comment_symbol`.
 pub fn newline_with_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> impl Parser<'a, (), S> {
   either(
-    ignore_chain(vec![
+    chain!(
       space0(),
-      line_comment(comment_symbol),
-    ]),
-    ignore_chain(vec![
+      line_comment(comment_symbol)
+    ),
+    chain!(
       space0(),
       newline_char()
-    ]),
-  )
+    ),
+  ).ignore()
 }
 
+/// Parse a line comment started with `comment_symbol`.
 pub fn line_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> BoxedParser<'a, (), S> {
-  ignore_chain(vec![
-    token(comment_symbol).ignore(),
+  chain!(
+    token(comment_symbol),
     zero_or_more(any_char().pred(
       |character| *character != '\n' && *character != '\r',
       "any character",
-    )).ignore(),
-    newline_char(),
-  ])
+    )),
+    newline_char()
+  ).ignore()
 }
 
+/// Chain several parsers together and parse them in sequence.
+/// 
+/// Example:
+/// ```
+/// assert_eq!(
+///   chain!(token("a"), token("b"), token("c")).parse("abc", Location { row: 1, col: 1 }, ()),
+///   ParseResult::ParseOk {
+///     input: "",
+///     location: Location { row: 1, col: 4 },
+///     output: ("a", ("b", "c")),
+///     state: (),
+///   }
+/// );
+/// ```
+/// The above example parses the letters "a", "b", and "c" in sequence and returns
+/// a nested tuple `("a", ("b", "c"))` containing each of the parser outputs.
 #[macro_export]
 macro_rules! chain {
   ($single_parser:expr) => { $single_parser };
   ($first_parser:expr, $($parsers:expr),+) => {
-    $first_parser.and_then(| output |
-      chain!($($parsers),*).map(move | next_output | (output, next_output) )
+    $first_parser.and_then(move | output |
+      chain!($($parsers),*).map(move | next_output | (output.clone(), next_output) )
     )
   };
 }
 
-pub fn ignore_chain<'a, S: Clone + 'a>(parsers: Vec<BoxedParser<'a, (), S>>) -> BoxedParser<'a, (), S>
-{
-  BoxedParser::new(
-    move | mut input, mut location, mut state | {
-    for parser in &parsers {
-      match parser.parse(input, location, state) {
-        ParseResult::ParseOk {
-          input: next_input,
-          location: next_location,
-          state: next_state,
-          ..
-        } => {
-          input = next_input;
-          location = next_location;
-          state = next_state;
-        },
-        error @ ParseResult::ParseError {..} => {
-          return error;
-        }
-      }
-    }
-    ParseResult::ParseOk {
-      input,
-      location,
-      output: (),
-      state,
-    }
-  })
-}
-
+/// Parses a whole decimal number.
 pub fn whole_decimal<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
   one_or_more(
     any_char().pred(
@@ -808,6 +922,10 @@ pub fn whole_decimal<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
   ).map(| digits | digits.iter().collect::<String>().parse().unwrap())
 }
 
+/// Record the beginning and ending location of the thing being parsed.
+/// 
+/// You can surround any parser with `located` and remember the location
+/// of the parsed output for later error messaging or text processing.
 pub fn located<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Located<A>, S>
   where
     P: Parser<'a, A, S>
@@ -835,13 +953,13 @@ pub fn located<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Locate
         location: next_location,
         state: next_state,
       },
-    ParseResult::ParseError {
+    ParseResult::ParseErr {
       message: error_message,
       from,
       to,
       state,
     } =>
-      ParseResult::ParseError {
+      ParseResult::ParseErr {
         message: error_message,
         from,
         to,
@@ -850,6 +968,13 @@ pub fn located<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Locate
   }
 }
 
+/// Pretty print the error.
+/// 
+/// Example:
+/// 1| A=A+2
+///      ^^^
+/// ⚠️I can't find a computation instruction matching `A+2`.
+/// Try something like `D+1` and `0`.
 pub fn display_error(source: &str, error_message: String, from: Location, to: Location) -> String {
   let row = from.row;
   let col = from.col;
@@ -884,13 +1009,13 @@ fn update_state<'a, P, A: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl Pars
           location: next_location,
           state: f(output, next_state),
         },
-      ParseResult::ParseError {
+      ParseResult::ParseErr {
         message,
         from,
         to,
         state,
       } =>
-        ParseResult::ParseError {
+        ParseResult::ParseErr {
           message,
           from,
           to,
