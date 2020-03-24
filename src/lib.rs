@@ -820,7 +820,10 @@ macro_rules! one_of {
   };
 }
 
-fn either<'a, A, P: 'a, S: Clone + 'a>(parser1: P, parser2: P)
+/// Choose either the left parser or the right parser to parse.
+/// 
+/// For choosing between more than two parsers, use [`one_of!`](macro.one_of!.html)
+pub fn either<'a, A, P: 'a, S: Clone + 'a>(parser1: P, parser2: P)
   -> BoxedParser<'a, A, S>
   where
     P: Parser<'a, A, S>
