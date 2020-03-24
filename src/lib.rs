@@ -1,6 +1,6 @@
-//! # Straight-parse library
+//! # Lip Parsing Library
 //! 
-//! Straight-parse provides powerful parser combinators for you to
+//! Lip provides powerful parser combinators for you to
 //! create reusable and flexible parsers.
 
 #[macro_use]
