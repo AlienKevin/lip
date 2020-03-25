@@ -115,3 +115,16 @@ fn test_update() {
     }
   );
 }
+
+#[test]
+fn test_token() {
+  assert_eq!(
+    token("").parse("aweiow", Location { row: 1, col: 1 }, ()),
+    ParseResult::Ok {
+      input: "aweiow",
+      output: "",
+      location: Location { row: 1, col: 1 },
+      state: (),
+    }
+  );
+}
