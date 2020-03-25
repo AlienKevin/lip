@@ -1003,7 +1003,7 @@ pub fn located<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Locate
 /// Example:
 /// 1| A=A+2
 ///      ^^^
-/// ⚠️I can't find a computation instruction matching `A+2`.
+/// ⚠ I can't find a computation instruction matching `A+2`.
 /// Try something like `D+1` and `0`.
 pub fn display_error(source: &str, error_message: String, from: Location, to: Location) -> String {
   let row = from.row;
@@ -1016,7 +1016,7 @@ pub fn display_error(source: &str, error_message: String, from: Location, to: Lo
   let error_line = row.to_string() + "| " + source.split("\n").collect::<Vec<&str>>()[row - 1];
   let error_pointer = " ".repeat(col - 1 + row.to_string().len() + 2) + &"^".repeat(error_length);
   let error_report =
-    error_line + "\n" + &error_pointer + "\n" + "⚠️" + &error_message;
+    error_line + "\n" + &error_pointer + "\n" + "⚠ " + &error_message;
   error_report
 }
 
