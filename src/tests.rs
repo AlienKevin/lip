@@ -5,7 +5,7 @@ use super::*;
 fn test_one_of() {
   assert_eq!(
     one_of!(token("a"), token("b"), token("c")).parse("c", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseOk {
+    ParseResult::Ok {
       input: "",
       location: Location { row: 1, col: 2 },
       output: "c",
@@ -14,7 +14,7 @@ fn test_one_of() {
   );
   assert_eq!(
     one_of!(token("a"), token("b"), token("c")).parse("", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseErr {
+    ParseResult::Err {
       message: "I'm expecting a `c` but found nothing.".to_string(),
       from: Location { row: 1, col: 1 },
       to: Location { row: 1, col: 1 },
@@ -23,7 +23,7 @@ fn test_one_of() {
   );
   assert_eq!(
     one_of!(token("a"), token("b"), token("c")).parse("w", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseErr {
+    ParseResult::Err {
       message: "I'm expecting a `c` but found `w`.".to_string(),
       from: Location { row: 1, col: 1 },
       to: Location { row: 1, col: 2 },
@@ -36,7 +36,7 @@ fn test_one_of() {
 fn test_chain() {
   assert_eq!(
     chain!(token("a"), token("b"), token("c")).parse("abc", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseOk {
+    ParseResult::Ok {
       input: "",
       location: Location { row: 1, col: 4 },
       output: ("a", ("b", "c")),
@@ -45,7 +45,7 @@ fn test_chain() {
   );
   assert_eq!(
     chain!(token("a"), token("b"), token("d")).parse("abc", Location { row: 1, col: 1 }, ()),
-    ParseResult::ParseErr {
+    ParseResult::Err {
       message: "I'm expecting a `d` but found `c`.".to_string(),
       from: Location { row: 1, col: 3 },
       to: Location { row: 1, col: 4 },
@@ -62,14 +62,14 @@ fn test_update() {
   }
   assert_eq!(
     token("a").update(| input, output, location, state: Counter |
-      ParseResult::ParseOk {
+      ParseResult::Ok {
         input,
         output: format!("{}b", output),
         location,
         state: Counter { count: state.count + 1 },
       }
     ).parse("a", Location { row: 1, col: 1 }, Counter { count: 0 }),
-    ParseResult::ParseOk {
+    ParseResult::Ok {
       input: "",
       location: Location { row: 1, col: 2 },
       output: "ab".to_string(),
@@ -78,7 +78,7 @@ fn test_update() {
   );
   let counted_parser = token("a").update(| input, output, location, state: Counter |
     if state.count > 10 {
-      ParseResult::ParseErr {
+      ParseResult::Err {
         message: "Too many things (more than 10)!".to_string(),
         from: Location {
           col: location.col - 1,
@@ -88,7 +88,7 @@ fn test_update() {
         state,
       }
     } else {
-      ParseResult::ParseOk {
+      ParseResult::Ok {
         input,
         output: format!("{}a", output),
         location,
@@ -98,7 +98,7 @@ fn test_update() {
   );
   assert_eq!(
     counted_parser.parse("a", Location { row: 1, col: 1 }, Counter { count: 0 }),
-    ParseResult::ParseOk {
+    ParseResult::Ok {
       input: "",
       location: Location { row: 1, col: 2 },
       output: "aa".to_string(),
@@ -107,7 +107,7 @@ fn test_update() {
   );
   assert_eq!(
     counted_parser.parse("a", Location { row: 1, col: 1 }, Counter { count: 11 }),
-    ParseResult::ParseErr {
+    ParseResult::Err {
       message: "Too many things (more than 10)!".to_string(),
       from: Location { row: 1, col: 1 },
       to: Location { row: 1, col: 2 },
