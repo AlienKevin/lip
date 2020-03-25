@@ -55,6 +55,7 @@ pub struct Location {
 /// we mentioned above during parsing. The only requirement on `state` is implementation
 /// of the `Clone` trait. Here's an example `state`:
 /// ```
+/// # use im::hashmap::HashMap;
 /// #[derive(Clone, Debug)]
 /// pub struct State {
 ///   symbol_table: HashMap<String, usize>, // build up a symbol table
@@ -243,6 +244,22 @@ pub trait Parser<'a, Output, State: Clone> {
     F: Fn(Output, State) -> State + 'a,
   {
     BoxedParser::new(update_state(self, f))
+  }
+  /// Update the result of the parser if parse succeeds.
+  /// Otherwise, return error as usual.
+  /// 
+  /// This is the most general and powerful method of the parser.
+  /// Think about using simpler methods like `map` and `map_err` before
+  /// choosing `update`.
+  fn update<F, NewOutput>(self, f: F) -> BoxedParser<'a, NewOutput, State>
+  where
+    Self: Sized + 'a,
+    State: 'a,
+    Output: Clone + 'a,
+    NewOutput: Clone + 'a,
+    F: Fn(&'a str, Output, Location, State) -> ParseResult<'a, NewOutput, State> + 'a,
+  {
+    BoxedParser::new(update(self, f))
   }
 }
 
@@ -571,13 +588,20 @@ where
 /// 
 /// Exmaple:
 /// ```
-/// any_char().pred(
-///   | character |
-///   character.is_digit(10)
-///   , "a decimal digit"
-/// )
+/// # use lip::*;
+/// # use crate::lip::Parser;
+/// pub fn whole_decimal<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
+///   one_or_more(
+///     any_char().pred(
+///     | character |
+///       character.is_digit(10)
+///     , "a whole decimal number"
+///     )
+///   ).map(| digits | digits.iter().collect::<String>().parse().unwrap())
+/// }
 /// ```
-/// The above example is parses a decimal digit. See [whole_decimal](fn.whole_decimal.html) for the full code.
+/// The above uses `any_char` coupled with `pred` to parse a whole decimal number.
+/// See [whole_decimal](fn.whole_decimal.html) for more details.
 pub fn any_char<'a, S: Clone + 'a>() -> impl Parser<'a, char, S> {
   |input: &'a str, location: Location, state| match input.chars().next() {
     Some(character) => ParseResult::ParseOk {
@@ -892,6 +916,9 @@ pub fn line_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> BoxedPar
 /// 
 /// Example:
 /// ```
+/// # #[macro_use] extern crate lip;
+/// # use lip::*;
+/// # use crate::lip::Parser;
 /// assert_eq!(
 ///   chain!(token("a"), token("b"), token("c")).parse("abc", Location { row: 1, col: 1 }, ()),
 ///   ParseResult::ParseOk {
@@ -1012,6 +1039,36 @@ fn update_state<'a, P, A: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl Pars
           location: next_location,
           state: f(output, next_state),
         },
+      ParseResult::ParseErr {
+        message,
+        from,
+        to,
+        state,
+      } =>
+        ParseResult::ParseErr {
+          message,
+          from,
+          to,
+          state,
+        }
+    }
+  }
+}
+
+fn update<'a, P, A: Clone, B: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl Parser<'a, B, S>
+  where
+    P: Parser<'a, A, S>,
+    F: Fn(&'a str, A, Location, S) -> ParseResult<'a, B, S>
+{
+  move |input, location, state| {
+    match parser.parse(input, location, state) {
+      ParseResult::ParseOk {
+        input: next_input,
+        location: next_location,
+        state: next_state,
+        output,
+      } =>
+        f(next_input, output, next_location, next_state),
       ParseResult::ParseErr {
         message,
         from,
