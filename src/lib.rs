@@ -953,14 +953,49 @@ macro_rules! chain {
   };
 }
 
-/// Parses a whole decimal number.
-pub fn whole_decimal<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
+/// Parses a decimal integer, excluding the sign in front.
+/// 
+/// run int "1"    == Ok 1
+/// 
+/// run int "1234" == Ok 1234
+/// 
+/// run int "-789" == Err ...
+/// 
+/// run int "0123" == Err ...
+/// 
+/// run int "1.34" == Err ...
+/// 
+/// run int "1e31" == Err ...
+/// 
+/// run int "123a" == Err ...
+/// 
+/// run int "0x1A" == Err ...
+pub fn int<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
   one_or_more(
     any_char().pred(
     &(| character: &char | character.is_digit(10))
-    , "a whole decimal number"
+    , "an integer"
     )
-  ).map(| digits | digits.iter().collect::<String>().parse().unwrap())
+  ).update(|input, digits, location, state|
+    if digits[0] == '0' && digits.len() > 1 {
+      ParseResult::Err {
+        message: "You can't have leading zeroes in an integer.".to_string(),
+        from: Location {
+          col: location.col - digits.len(),
+          ..location
+        },
+        to: location,
+        state,
+      }
+    } else {
+      ParseResult::Ok {
+        input,
+        output: digits.iter().collect::<String>().parse().unwrap(),
+        location,
+        state
+      }
+    }
+  )
 }
 
 /// Parse a variable.

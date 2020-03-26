@@ -246,3 +246,43 @@ fn test_one_or_more() {
     }
   );
 }
+
+#[test]
+fn test_int() {
+  assert_eq!(
+    int().parse("2000892303900", Location { row: 1, col: 1 }, ()),
+    ParseResult::Ok {
+      input: "",
+      output: 2000892303900,
+      location: Location { row: 1, col: 14 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    int().parse("0", Location { row: 1, col: 1 }, ()),
+    ParseResult::Ok {
+      input: "",
+      output: 0,
+      location: Location { row: 1, col: 2 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    int().parse("01", Location { row: 1, col: 1 }, ()),
+    ParseResult::Err {
+      message: "You can't have leading zeroes in an integer.".to_string(),
+      from: Location { row: 1, col: 1 },
+      to: Location { row: 1, col: 3 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    int().parse("0010", Location { row: 1, col: 1 }, ()),
+    ParseResult::Err {
+      message: "You can't have leading zeroes in an integer.".to_string(),
+      from: Location { row: 1, col: 1 },
+      to: Location { row: 1, col: 5 },
+      state: (),
+    }
+  );
+}
