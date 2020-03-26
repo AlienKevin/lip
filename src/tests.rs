@@ -128,3 +128,68 @@ fn test_token() {
     }
   );
 }
+
+#[test]
+fn test_variable() {
+  let reserved = &([ "Func", "Import", "Export" ].iter().cloned().map(| element | element.to_string()).collect());
+  assert_eq!(
+    variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name")
+      .parse("Dict", Location { row: 1, col: 1}, ()),
+    ParseResult::Ok {
+      input: "",
+      output: "Dict".to_string(),
+      location: Location { row: 1, col: 5 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name")
+      .parse("dict", Location { row: 1, col: 1}, ()),
+    ParseResult::Err {
+      message: "I'm expecting a capitalized name but found `d`.".to_string(),
+      from: Location { row: 1, col: 1 },
+      to: Location { row: 1, col: 2 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name")
+      .parse("Export", Location { row: 1, col: 1}, ()),
+    ParseResult::Err {
+      message: "I'm expecting a capitalized name but found a reserved word `Export`.".to_string(),
+      from: Location { row: 1, col: 1 },
+      to: Location { row: 1, col: 7 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name")
+      .parse("Main.Local$frame3", Location { row: 1, col: 1}, ()),
+    ParseResult::Ok {
+      input: "",
+      output: "Main.Local$frame3".to_string(),
+      location: Location { row: 1, col: 18 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name")
+      .parse("Main.Local$$frame3", Location { row: 1, col: 1}, ()),
+    ParseResult::Err {
+      message: "I'm expecting a variable name but found `Main.Local$$frame3` with duplicated separators.".to_string(),
+      from: Location { row: 1, col: 1 },
+      to: Location { row: 1, col: 19 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name")
+      .parse("Main.Local$frame3$", Location { row: 1, col: 1}, ()),
+    ParseResult::Err {
+      message: "I'm expecting a variable name but found `Main.Local$frame3$` ended with the separator `$`.".to_string(),
+      from: Location { row: 1, col: 1 },
+      to: Location { row: 1, col: 19 },
+      state: (),
+    }
+  );
+}

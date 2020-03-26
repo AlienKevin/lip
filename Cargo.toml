@@ -11,4 +11,3 @@ repository = "https://github.com/AlienKevin/lip"
 
 [dependencies]
 lazy_static = "1.4.0"
-im = "14.3.0"

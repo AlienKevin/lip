@@ -7,6 +7,7 @@
 mod tests;
 
 use std::fmt::*;
+use std::collections::HashSet;
 
 /// Add location information to any type.
 /// 
@@ -55,7 +56,7 @@ pub struct Location {
 /// we mentioned above during parsing. The only requirement on `state` is implementation
 /// of the `Clone` trait. Here's an example `state`:
 /// ```
-/// # use im::hashmap::HashMap;
+/// # use std::collections::HashMap;
 /// #[derive(Clone, Debug)]
 /// pub struct State {
 ///   symbol_table: HashMap<String, usize>, // build up a symbol table
@@ -216,7 +217,7 @@ pub trait Parser<'a, Output, State: Clone> {
   }
   /// Judge if the output meets the requirement using a predicate function
   /// if the parse succeeds. Otherwise, return error as usual.
-  fn pred<F>(self, predicate: F, expecting: &'a str) -> BoxedParser<'a, Output, State>
+  fn pred<F>(self, predicate: &'a F, expecting: &'a str) -> BoxedParser<'a, Output, State>
   where
     Self: Sized + 'a,
     Output: std::fmt::Display + 'a,
@@ -593,9 +594,8 @@ where
 /// pub fn whole_decimal<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
 ///   one_or_more(
 ///     any_char().pred(
-///     | character |
-///       character.is_digit(10)
-///     , "a whole decimal number"
+///     &(| c: &char | c.is_digit(10)),
+///     "a whole decimal number"
 ///     )
 ///   ).map(| digits | digits.iter().collect::<String>().parse().unwrap())
 /// }
@@ -619,7 +619,7 @@ pub fn any_char<'a, S: Clone + 'a>() -> impl Parser<'a, char, S> {
   }
 }
 
-fn pred<'a, P, F, A: std::fmt::Display, S: Clone + 'a>(parser: P, predicate: F, expecting: &'a str) -> impl Parser<'a, A, S>
+fn pred<'a, P, F, A: std::fmt::Display, S: Clone + 'a>(parser: P, predicate: &'a F, expecting: &'a str) -> impl Parser<'a, A, S>
 where
   P: Parser<'a, A, S>,
   F: Fn(&A) -> bool,
@@ -667,7 +667,7 @@ where
 /// Parse a single space character.
 pub fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   any_char().pred(
-    |character| *character == ' ',
+    &(|c: &char| *c == ' '),
     "a whitespace",
   ).ignore()
 }
@@ -682,7 +682,7 @@ pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
       let mut next_location: Location = location;
       let mut next_state: S = state.clone();
       let result1 = any_char().pred(
-        |character| *character == '\r',
+        &(|c: &char| *c == '\r'),
         "a carriage return",
       ).parse(input, location, state);
       match result1 {
@@ -699,7 +699,7 @@ pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
         _ => {}
       }
       let result = any_char().pred(
-        |character| *character == '\n',
+        &(|c: &char| *c == '\n'),
         "a newline",
       ).parse(next_input, next_location, next_state);
       match result {
@@ -905,7 +905,7 @@ pub fn line_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> BoxedPar
   chain!(
     token(comment_symbol),
     zero_or_more(any_char().pred(
-      |character| *character != '\n' && *character != '\r',
+      &(|c: &char| *c != '\n' && *c != '\r'),
       "any character",
     )),
     newline_char()
@@ -945,11 +945,112 @@ macro_rules! chain {
 pub fn whole_decimal<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
   one_or_more(
     any_char().pred(
-    | character |
-      character.is_digit(10)
+    &(| character: &char | character.is_digit(10))
     , "a whole decimal number"
     )
   ).map(| digits | digits.iter().collect::<String>().parse().unwrap())
+}
+
+/// Parse a variable.
+/// 
+/// If we want to parse a PascalCase variable excluding three reserved words, we can try something like:
+/// ```
+/// # use lip::*;
+/// let reserved = &([ "Func", "Import", "Export" ].iter().cloned().map(| element | element.to_string()).collect());
+/// assert_eq!(
+///   variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a PascalCase variable")
+///     .parse("Dict", Location { row: 1, col: 1}, ()),
+///   ParseResult::Ok {
+///     input: "",
+///     output: "Dict".to_string(),
+///     location: Location { row: 1, col: 5 },
+///     state: (),
+///   }
+/// );
+/// ```
+/// If we want to parse a snake_case variable, we can try something like:
+/// ```
+/// # use lip::*;
+/// # use std::collections::HashSet;
+/// assert_eq!(
+///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable")
+///    .parse("my_variable_1", Location { row: 1, col: 1}, ()),
+///  ParseResult::Ok {
+///    input: "",
+///    output: "my_variable_1".to_string(),
+///    location: Location { row: 1, col: 14 },
+///    state: (),
+///  }
+///);
+/// ```
+/// The below uses the same snake_case variable parser. However, the separator `_` appeared at the end of the name `invalid_variable_name_`:
+/// ```
+/// # use lip::*;
+/// # use std::collections::HashSet;
+/// assert_eq!(
+///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable")
+///    .parse("invalid_variable_name_", Location { row: 1, col: 1}, ()),
+///  ParseResult::Err {
+///    message: "I'm expecting a snake_case variable but found `invalid_variable_name_` ended with the separator `_`.".to_string(),
+///    from: Location { row: 1, col: 1 },
+///    to: Location { row: 1, col: 23 },
+///    state: (),
+///  }
+///);
+/// ```
+pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner: &'a F2, separator: &'a F3, reserved: &'a HashSet<String>, expecting: &'a str) -> impl Parser<'a, String, S>
+  where
+    F1: Fn(&char) -> bool,
+    F2: Fn(&char) -> bool,
+    F3: Fn(&char) -> bool,
+{
+  chain!(
+    any_char().pred(start, expecting),
+    zero_or_more(one_of!(
+      any_char().pred(separator, expecting),
+      any_char().pred(inner, expecting)
+    ))
+  ).update(move |input, (start_char, mut inner_chars), location, state| {
+    inner_chars.insert(0, start_char);
+    let name = inner_chars.iter().collect::<String>();
+    if reserved.contains(&name) {
+      ParseResult::Err {
+        message: format!("I'm expecting {} but found a reserved word `{}`.", expecting, name),
+        from: Location {
+          col: location.col - name.len(),
+          ..location
+        },
+        to: location,
+        state,
+      }
+    } else {
+      if name.chars().zip(name[1..].chars()).any(|(c, next_c)| separator(&c) && separator(&next_c)) {
+        ParseResult::Err {
+          message: format!("I'm expecting {} but found `{}` with duplicated separators.", expecting, name),
+          from: Location {
+            col: location.col - name.len(),
+            ..location
+          },
+          to: location,
+          state,
+        }
+      } else if separator(&name.chars().last().unwrap()) {
+        ParseResult::Err {
+          message: format!("I'm expecting {} but found `{}` ended with the separator `{}`.", expecting, name, &name.chars().last().unwrap()),
+          from: Location {
+            col: location.col - name.len(),
+            ..location
+          },
+          to: location,
+          state,
+        }
+      } else {
+        ParseResult::Ok {
+          input, location, output: name.clone(), state,
+        }  
+      }
+    }
+  })
 }
 
 /// Record the beginning and ending location of the thing being parsed.
