@@ -1,5 +1,9 @@
 #[cfg(test)]
 use super::*;
+use super::Parser;
+use super::Location;
+use super::ParseResult;
+use std::fmt::Debug;
 
 #[test]
 fn test_one_of() {
@@ -285,4 +289,53 @@ fn test_int() {
       state: (),
     }
   );
+}
+
+#[test]
+fn test_float() {
+  assert_eq!(success(float(), "123"), 123_f64);
+  assert_eq!(success(float(), "3.1415"), 3.1415_f64);
+  assert_eq!(success(float(), "0.1234"), 0.1234_f64);
+  assert_eq!(success(float(), "1e-42"), 1e-42_f64);
+  assert_eq!(success(float(), "6.022e23"), 6.022e23_f64);
+  assert_eq!(success(float(), "6.022E+23"), 6.022E+23_f64);
+  assert_eq!(success(float(), "6.022e-23"), 6.022E-23_f64);
+  assert_eq!(fail(float(), ".023"), ParseResult::Err {
+    message: "I'm expecting a floating point number but found `.`.".to_string(),
+    from: Location { row: 1, col: 1 },
+    to: Location { row: 1, col: 2 },
+    state: (),
+  });
+  assert_eq!(fail(float(), "023.99"), ParseResult::Err {
+    message: "You can't have leading zeroes in a floating point number.".to_string(),
+    from: Location { row: 1, col: 1 },
+    to: Location { row: 1, col: 4 },
+    state: (),
+  });
+  assert_eq!(fail(float(), "r33"), ParseResult::Err {
+    message: "I'm expecting a floating point number but found `r`.".to_string(),
+    from: Location { row: 1, col: 1 },
+    to: Location { row: 1, col: 2 },
+    state: (),
+  });
+  assert_eq!(fail(float(), "-33"), ParseResult::Err {
+    message: "I'm expecting a floating point number but found `-`.".to_string(),
+    from: Location { row: 1, col: 1 },
+    to: Location { row: 1, col: 2 },
+    state: (),
+  });
+}
+
+fn success<'a, P: 'a, A: 'a>(parser: P, source: &'a str) -> A
+where
+  P: Parser<'a, A, ()>
+{
+  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap(source)
+}
+
+fn fail<'a, P: 'a, A: Debug + 'a>(parser: P, source: &'a str) -> ParseResult<'a, A, ()>
+where
+  P: Parser<'a, A, ()>
+{
+  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap_err(source)
 }

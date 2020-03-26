@@ -144,6 +144,25 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
         ParseResult::Err { message, from, to, state },
     }
   }
+  fn unwrap(self, source: &'a str) -> T {
+    match self {
+      ParseResult::Ok { output, .. } =>
+        output,
+      ParseResult::Err { message, from, to, .. } =>
+        panic!(display_error(source, message, from, to)),
+    }
+  }
+  fn unwrap_err(self, source: &'a str) -> ParseResult<'a, T, S>
+  where
+    T: Debug + 'a
+  {
+    match self {
+      ParseResult::Ok { output, .. } =>
+        panic!(format!("{:#?}", output)),
+      ParseResult::Err { message, from, to, state } =>
+        ParseResult::Err { message, from, to, state },
+    }
+  }
 }
 
 pub trait Parser<'a, Output, State: Clone> {
@@ -971,15 +990,59 @@ macro_rules! chain {
 /// 
 /// run int "0x1A" == Err ...
 pub fn int<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
+  digits("an integer", false).map(|int_str| int_str.parse().unwrap())
+}
+
+/// Parses a floating point number, excluding the sign in front.
+/// 
+/// run float "123"       == Ok 123
+/// 
+/// run float "3.1415"    == Ok 3.1415
+/// 
+/// run float "0.1234"    == Ok 0.1234
+/// 
+/// run float ".1234"     == Err ...
+/// 
+/// run float "1e-42"     == Ok 1e-42
+/// 
+/// run float "6.022e23"  == Ok 6.022e23
+/// 
+/// run float "6.022E23"  == Ok 6.022e23
+/// 
+/// run float "6.022e+23" == Ok 6.022e23
+pub fn float<'a, S: Clone + 'a>() -> impl Parser<'a, f64, S> {
+  let expecting = "a floating point number";
+  chain!(
+    digits(expecting, false),
+    optional(
+      "".to_string(),
+      right(token("."), digits(expecting, true)).map(|digits| ".".to_owned() + &digits)
+    ),
+    optional(
+      "".to_string(),
+      chain!(
+        either(token("e"), token("E")),
+        optional("", either(token("+"), token("-"))),
+        digits(expecting, false)
+      ).map(|(_, (sign, exponent))|
+        "e".to_string() + sign + &exponent
+      )
+    )
+  ).map(|(whole, (fraction, exponent))|
+    (whole + &fraction + &exponent).parse().unwrap()
+  )
+}
+
+fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl Parser<'a, String, S> {
   one_or_more(
     any_char().pred(
     &(| character: &char | character.is_digit(10))
-    , "an integer"
+    , name
     )
-  ).update(|input, digits, location, state|
-    if digits[0] == '0' && digits.len() > 1 {
+  ).update(move |input, digits, location, state|
+    if !allow_leading_zeroes && digits[0] == '0' && digits.len() > 1 {
       ParseResult::Err {
-        message: "You can't have leading zeroes in an integer.".to_string(),
+        message: format!("You can't have leading zeroes in {}.", name),
         from: Location {
           col: location.col - digits.len(),
           ..location
@@ -990,7 +1053,7 @@ pub fn int<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
     } else {
       ParseResult::Ok {
         input,
-        output: digits.iter().collect::<String>().parse().unwrap(),
+        output: digits.iter().collect::<String>(),
         location,
         state
       }
