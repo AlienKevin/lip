@@ -262,6 +262,38 @@ pub trait Parser<'a, Output, State: Clone> {
   {
     BoxedParser::new(update(self, f))
   }
+  /// Check if you have reached the end of the input you are parsing.
+  /// 
+  /// If you want to parse an input containing only "abc":
+  /// ```
+  /// # use lip::*;
+  /// assert_eq!(
+  ///  token("abc").end().parse("abc", Location { row: 1, col: 1}, ()),
+  ///  ParseResult::Ok {
+  ///    input: "",
+  ///    output: "abc",
+  ///    location: Location { row: 1, col: 4 },
+  ///    state: (),
+  ///  }
+  ///);
+  ///assert_eq!(
+  ///  token("abc").end().parse("abcd", Location { row: 1, col: 1}, ()),
+  ///  ParseResult::Err {
+  ///    message: "I'm expecting the end of input.".to_string(),
+  ///    from: Location { row: 1, col: 4 },
+  ///    to: Location { row: 1, col: 4 },
+  ///    state: (),
+  ///  }
+  ///);
+  /// ```
+  fn end(self) -> BoxedParser<'a, Output, State>
+  where
+    Self: Sized + 'a,
+    Output: Clone + 'a,
+    State: 'a,
+  {
+    BoxedParser::new(end(self))
+  }
 }
 
 impl<'a, F, Output, State: 'a> Parser<'a, Output, State> for F
@@ -463,26 +495,7 @@ where
 /// Run the parser one or more times and combine each output into a vector of outputs.
 pub fn one_or_more<'a, P, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Vec<A>, S>
 where
-  P: Parser<'a, A, S>,
-{
-  one_or_more_with_ending(false, parser)
-}
-
-/// Run the parser one or more times and combine each output into a vector of outputs,
-/// until the end of the source string.
-/// 
-/// Returns error even when matching one or more times if parser doesn't
-/// reach the end of input.
-pub fn one_or_more_till_end<'a, P, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Vec<A>, S>
-where
-  P: Parser<'a, A, S>,
-{
-  one_or_more_with_ending(true, parser)
-}
-
-fn one_or_more_with_ending<'a, P, A, S: Clone + 'a>(till_end: bool, parser: P) -> impl Parser<'a, Vec<A>, S>
-where
-  P: Parser<'a, A, S>,
+  P: Parser<'a, A, S>
 {
   move |mut input, mut location, mut state: S| {
     let mut result = Vec::new();
@@ -500,17 +513,12 @@ where
         result.push(first_item);
       }
       ParseResult::Err {
-        message: error_message,
+        message,
         from,
         to,
         state
       } => {
-        return ParseResult::Err {
-          message: error_message,
-          from,
-          to,
-          state,
-        };
+        return ParseResult::Err { message, from, to, state };
       }
     }
 
@@ -527,21 +535,7 @@ where
           state = next_state;
           result.push(next_item);
         },
-        ParseResult::Err {
-          message: error_message,
-          from,
-          to,
-          state,
-        } => if till_end && input != "" {
-          return ParseResult::Err {
-            message: error_message,
-            from,
-            to,
-            state,
-          };
-        } else {
-          break;
-        }
+        ParseResult::Err {..} => break
       }
     }
 
@@ -552,6 +546,24 @@ where
       state: state,
     }
   }
+}
+
+fn end<'a, P: 'a, A: Clone + 'a, S: Clone + 'a>(parser: P) -> impl Parser<'a, A, S>
+where
+  P: Parser<'a, A, S>,
+{
+  parser.update(|input, output, location, state|
+    if input != "" {
+      ParseResult::Err {
+        message: "I'm expecting the end of input.".to_string(),
+        from: location,
+        to: location,
+        state,
+      }
+    } else {
+      ParseResult::Ok { input, output, location, state }
+    }
+  )
 }
 
 /// Run the parser zero or more times and combine each output into a vector of outputs.

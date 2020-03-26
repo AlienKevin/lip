@@ -193,3 +193,56 @@ fn test_variable() {
     }
   );
 }
+
+#[test]
+fn test_end() {
+  assert_eq!(
+    token("abc").end().parse("abc", Location { row: 1, col: 1}, ()),
+    ParseResult::Ok {
+      input: "",
+      output: "abc",
+      location: Location { row: 1, col: 4 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    token("abc").end().parse("abcd", Location { row: 1, col: 1}, ()),
+    ParseResult::Err {
+      message: "I'm expecting the end of input.".to_string(),
+      from: Location { row: 1, col: 4 },
+      to: Location { row: 1, col: 4 },
+      state: (),
+    }
+  );
+}
+
+#[test]
+fn test_one_or_more() {
+  assert_eq!(
+    one_or_more(token("a")).parse("a", Location { row: 1, col: 1 }, ()),
+    ParseResult::Ok {
+      input: "",
+      output: vec!["a"],
+      location: Location { row: 1, col: 2 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    one_or_more(token("a")).parse("aaaa", Location { row: 1, col: 1 }, ()),
+    ParseResult::Ok {
+      input: "",
+      output: vec!["a", "a", "a", "a"],
+      location: Location { row: 1, col: 5 },
+      state: (),
+    }
+  );
+  assert_eq!(
+    one_or_more(token("a")).parse("bbc", Location { row: 1, col: 1 }, ()),
+    ParseResult::Err {
+      message: "I'm expecting a `a` but found `b`.".to_string(),
+      from: Location { row: 1, col: 1 },
+      to: Location { row: 1, col: 2 },
+      state: (),
+    }
+  );
+}
