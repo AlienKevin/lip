@@ -3,6 +3,8 @@ use super::*;
 use super::Parser;
 use super::Location;
 use super::ParseResult;
+use super::SequenceArgs;
+use super::Trailing;
 use std::fmt::Debug;
 
 #[test]

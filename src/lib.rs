@@ -6,6 +6,7 @@
 #[macro_use]
 mod tests;
 
+use std::rc::Rc;
 use std::fmt::*;
 use std::collections::HashSet;
 
@@ -325,6 +326,14 @@ where
   }
 }
 
+impl<'a, Output: 'a, State: 'a> Clone for BoxedParser<'a, Output, State> {
+  fn clone(&self) -> Self {
+    BoxedParser {
+      parser: self.parser.clone()
+    }
+  }
+}
+
 /// Box `Parser` trait so its size is decidable in compile time.
 /// 
 /// Essentially allocate the `Parser` on the heap in runtime.
@@ -332,7 +341,7 @@ where
 /// may be different under the hood while `BoxedParser` is always a pointer
 /// to a place in the heap.
 pub struct BoxedParser<'a, Output, State> {
-  parser: Box<dyn Parser<'a, Output, State> + 'a>,
+  parser: Rc<dyn Parser<'a, Output, State> + 'a>,
 }
 
 impl<'a, Output,State> BoxedParser<'a, Output, State> {
@@ -343,7 +352,7 @@ impl<'a, Output,State> BoxedParser<'a, Output, State> {
       State: Clone,
   {
       BoxedParser {
-          parser: Box::new(parser),
+          parser: Rc::new(parser),
       }
   }
 }
@@ -1161,6 +1170,65 @@ pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner:
       }
     }
   })
+}
+
+#[derive(Clone)]
+enum Trailing {
+  Forbidden,
+  Optional,
+  Mandatory,
+}
+
+#[derive(Clone)]
+struct SequenceArgs<'a, A: 'a, S: 'a> {
+  start: &'static str,
+  separator: &'static str,
+  end: &'static str,
+  spaces: BoxedParser<'a, (), S>,
+  item: BoxedParser<'a, A, S>,
+  trailing: Trailing,
+}
+
+fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(args: &'a SequenceArgs<'a, A, S>) -> BoxedParser<'a, Vec<A>, S> {
+  chain!(
+    token(args.start),
+    args.spaces.clone(),
+    optional(
+      vec![],
+      chain!(
+        args.item.clone(),
+        zero_or_more(right(wrap(args.spaces.clone(), token(args.separator), args.spaces.clone()), args.item.clone()))
+      ).map(move |(first_item, mut rest_items)| {
+        rest_items.insert(0, first_item);
+        rest_items
+      })
+    ),
+    match args.trailing {
+      Trailing::Forbidden =>
+        token(""),
+      Trailing::Optional =>
+        optional("", token(args.end)),
+      Trailing::Mandatory =>
+        token(args.end)
+    }
+  ).map(|(_, (_, (items, _)))|
+    items
+  )
+}
+
+pub fn wrap<'a, A: 'a, B: 'a, C: 'a, S: Clone + 'a, P1: 'a, P2: 'a, P3: 'a>(left_delimiter: P1, wrapped: P2, right_delimiter: P3) -> BoxedParser<'a, B, S>
+where
+  P1: Parser<'a, A, S>,
+  P2: Parser<'a, B, S>,
+  P3: Parser<'a, C, S>,
+{
+  right(
+    left_delimiter,
+    left(
+      wrapped,
+      right_delimiter,
+    ),
+  )
 }
 
 /// Record the beginning and ending location of the thing being parsed.
