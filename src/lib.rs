@@ -1216,6 +1216,17 @@ fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(args: &'a SequenceArgs<'a, A, S>) 
   )
 }
 
+/// Wrap a parser with two other delimiter parsers
+/// 
+/// Example:
+/// Parsing a double-quoted string.
+/// ```
+/// # use lip::*;
+/// assert_eq!(
+///  succeed(wrap(token("\""), one_or_more(any_char().pred(&(|c: &char| *c != '"'), "string")).map(|chars| chars.iter().collect::<String>()), token("\"")), "\"I, have 1 string here\""),
+///  "I, have 1 string here",
+/// );
+/// ```
 pub fn wrap<'a, A: 'a, B: 'a, C: 'a, S: Clone + 'a, P1: 'a, P2: 'a, P3: 'a>(left_delimiter: P1, wrapped: P2, right_delimiter: P3) -> BoxedParser<'a, B, S>
 where
   P1: Parser<'a, A, S>,
@@ -1362,4 +1373,20 @@ fn update<'a, P, A: Clone, B: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl 
         }
     }
   }
+}
+
+#[doc(hidden)]
+pub fn succeed<'a, P: 'a, A: 'a>(parser: P, source: &'a str) -> A
+where
+  P: Parser<'a, A, ()>
+{
+  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap(source)
+}
+
+#[doc(hidden)]
+pub fn fail<'a, P: 'a, A: Debug + 'a>(parser: P, source: &'a str) -> ParseResult<'a, A, ()>
+where
+  P: Parser<'a, A, ()>
+{
+  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap_err(source)
 }

@@ -295,13 +295,13 @@ fn test_int() {
 
 #[test]
 fn test_float() {
-  assert_eq!(success(float(), "123"), 123_f64);
-  assert_eq!(success(float(), "3.1415"), 3.1415_f64);
-  assert_eq!(success(float(), "0.1234"), 0.1234_f64);
-  assert_eq!(success(float(), "1e-42"), 1e-42_f64);
-  assert_eq!(success(float(), "6.022e23"), 6.022e23_f64);
-  assert_eq!(success(float(), "6.022E+23"), 6.022E+23_f64);
-  assert_eq!(success(float(), "6.022e-23"), 6.022E-23_f64);
+  assert_eq!(succeed(float(), "123"), 123_f64);
+  assert_eq!(succeed(float(), "3.1415"), 3.1415_f64);
+  assert_eq!(succeed(float(), "0.1234"), 0.1234_f64);
+  assert_eq!(succeed(float(), "1e-42"), 1e-42_f64);
+  assert_eq!(succeed(float(), "6.022e23"), 6.022e23_f64);
+  assert_eq!(succeed(float(), "6.022E+23"), 6.022E+23_f64);
+  assert_eq!(succeed(float(), "6.022e-23"), 6.022E-23_f64);
   assert_eq!(fail(float(), ".023"), ParseResult::Err {
     message: "I'm expecting a floating point number but found `.`.".to_string(),
     from: Location { row: 1, col: 1 },
@@ -328,16 +328,19 @@ fn test_float() {
   });
 }
 
-fn success<'a, P: 'a, A: 'a>(parser: P, source: &'a str) -> A
-where
-  P: Parser<'a, A, ()>
-{
-  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap(source)
-}
-
-fn fail<'a, P: 'a, A: Debug + 'a>(parser: P, source: &'a str) -> ParseResult<'a, A, ()>
-where
-  P: Parser<'a, A, ()>
-{
-  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap_err(source)
+#[test]
+fn test_wrap() {
+  assert_eq!(
+    succeed(wrap(token("\""), one_or_more(any_char().pred(&(|c: &char| *c != '"'), "string")).map(|chars| chars.iter().collect::<String>()), token("\"")), "\"I, have 1 string here\""),
+    "I, have 1 string here",
+  );
+  assert_eq!(
+    fail(wrap(token("\""), one_or_more(any_char().pred(&(|c: &char| *c != '"'), "string")).map(|chars| chars.iter().collect::<String>()), token("\"")), "\"I, have 1 string here"),
+    ParseResult::Err {
+      message: "I'm expecting a `\"` but found nothing.".to_string(),
+      from: Location { row: 1, col: 23 },
+      to: Location { row: 1, col: 23 },
+      state: (),
+    }
+  );
 }
