@@ -73,12 +73,14 @@ pub enum ParseResult<'a, Output, State> {
     location: Location,
     output: Output,
     state: State,
+    bound: bool,
   },
   Err {
     message: String,
     from: Location,
     to: Location,
     state: State,
+    bound: bool,
   },
 }
 
@@ -87,15 +89,16 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
   /// Otherwise, return error as usual.
   pub fn map<U, F: FnOnce(T) -> U>(self, func: F) -> ParseResult<'a, U, S> {
     match self {
-      ParseResult::Ok { input, location, output, state } =>
+      ParseResult::Ok { input, location, output, state, bound } =>
         ParseResult::Ok {
           input,
           location,
           output: func(output),
           state,
+          bound,
         },
-      ParseResult::Err { message, from, to, state } =>
-        ParseResult::Err { message, from, to, state },
+      ParseResult::Err { message, from, to, state, bound } =>
+        ParseResult::Err { message, from, to, state, bound },
     }
   }
   /// Map the parse output to a new value if parse succeeds.
@@ -104,34 +107,37 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
   /// Otherwise, return error as usual.
   pub fn map_with_state<U, F: FnOnce(T, S) -> U>(self, func: F) -> ParseResult<'a, U, S> {
     match self {
-      ParseResult::Ok { input, location, output, state } =>
+      ParseResult::Ok { input, location, output, state, bound } =>
         ParseResult::Ok {
           input,
           location,
           output: func(output, state.clone()),
-          state: state,
+          state,
+          bound,
         },
-      ParseResult::Err { message, from, to, state } =>
-        ParseResult::Err { message, from, to, state },
+      ParseResult::Err { message, from, to, state, bound } =>
+        ParseResult::Err { message, from, to, state,bound },
     }
   }
   /// Map the error message to a new message if parse fails.
   /// Otherwise, return output as usual.
   pub fn map_err<F: FnOnce(String) -> String>(self, func: F) -> ParseResult<'a, T, S> {
     match self {
-      ParseResult::Ok { input, location, output, state } =>
+      ParseResult::Ok { input, location, output, state, bound } =>
         ParseResult::Ok {
           input,
           location,
           output,
           state,
+          bound,
         },
-      ParseResult::Err { message, from, to, state } =>
+      ParseResult::Err { message, from, to, state, bound } =>
         ParseResult::Err {
           message: func(message),
           from,
           to,
           state,
+          bound,
         }
     }
   }
@@ -139,10 +145,15 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
   /// Otherwise, return error as usual.
   pub fn and_then<U, F: FnOnce(&'a str, T, Location, S) -> ParseResult<'a, U, S>>(self, func: F) -> ParseResult<'a, U, S> {
     match self {
-      ParseResult::Ok { input, output, location, state } =>
-        func(input, output, location, state),
-      ParseResult::Err { message, from, to, state } =>
-        ParseResult::Err { message, from, to, state },
+      ParseResult::Ok { input, output, location, state, bound } =>
+        match func(input, output, location, state) {
+          ParseResult::Ok { input, output, location, state, bound: next_bound } =>
+            ParseResult::Ok { input, output, location, state, bound: bound || next_bound },
+          ParseResult::Err { message, from, to, state, bound: next_bound } =>
+            ParseResult::Err { message, from, to, state, bound: bound || next_bound }
+        },
+      ParseResult::Err { message, from, to, state, bound } =>
+        ParseResult::Err { message, from, to, state, bound },
     }
   }
   fn unwrap(self, source: &'a str) -> T {
@@ -153,15 +164,15 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
         panic!(display_error(source, message, from, to)),
     }
   }
-  fn unwrap_err(self, source: &'a str) -> ParseResult<'a, T, S>
+  fn unwrap_err(self) -> String
   where
     T: Debug + 'a
   {
     match self {
       ParseResult::Ok { output, .. } =>
         panic!(format!("{:#?}", output)),
-      ParseResult::Err { message, from, to, state } =>
-        ParseResult::Err { message, from, to, state },
+      ParseResult::Err { message, .. } =>
+        message,
     }
   }
 }
@@ -237,7 +248,7 @@ pub trait Parser<'a, Output, State: Clone> {
   }
   /// Judge if the output meets the requirement using a predicate function
   /// if the parse succeeds. Otherwise, return error as usual.
-  fn pred<F>(self, predicate: &'a F, expecting: &'a str) -> BoxedParser<'a, Output, State>
+  fn pred<F>(self, predicate: F, expecting: &'a str) -> BoxedParser<'a, Output, State>
   where
     Self: Sized + 'a,
     Output: std::fmt::Display + 'a,
@@ -287,24 +298,14 @@ pub trait Parser<'a, Output, State: Clone> {
   /// If you want to parse an input containing only "abc":
   /// ```
   /// # use lip::*;
-  /// assert_eq!(
-  ///  token("abc").end().parse("abc", Location { row: 1, col: 1}, ()),
-  ///  ParseResult::Ok {
-  ///    input: "",
-  ///    output: "abc",
-  ///    location: Location { row: 1, col: 4 },
-  ///    state: (),
-  ///  }
-  ///);
-  ///assert_eq!(
-  ///  token("abc").end().parse("abcd", Location { row: 1, col: 1}, ()),
-  ///  ParseResult::Err {
-  ///    message: "I'm expecting the end of input.".to_string(),
-  ///    from: Location { row: 1, col: 4 },
-  ///    to: Location { row: 1, col: 4 },
-  ///    state: (),
-  ///  }
-  ///);
+  /// succeed(
+  ///  token("abc").end(),
+  ///  "abc", "abc",
+  /// );
+  /// fail(
+  ///   token("abc").end(),
+  ///   "abcd", "I'm expecting the end of input.",
+  /// );
   /// ```
   fn end(self) -> BoxedParser<'a, Output, State>
   where
@@ -390,6 +391,7 @@ pub fn token<'a, S: Clone + 'a>(expected: &'static str) -> BoxedParser<'a, &str,
         output: expected,
         location: increment_col(expected.len(), location),
         state,
+        bound: true,
       },
       _ => ParseResult::Err {
         message: format!(
@@ -406,6 +408,7 @@ pub fn token<'a, S: Clone + 'a>(expected: &'static str) -> BoxedParser<'a, &str,
           None => location,
         },
         state,
+        bound: false,
       },
     }
   })
@@ -466,28 +469,15 @@ where
 {
   BoxedParser::new(
     move |input, location, state: S| match parser.parse(input, location, state.clone()) {
-      ParseResult::Ok {
-        input: next_input,
-        output,
-        location: next_location,
-        state: next_state,
-      } => ParseResult::Ok {
-        input: next_input,
-        location: next_location,
-        output: map_fn(output, next_state.clone()),
-        state: next_state,
+      ParseResult::Ok { input, output, location, state, bound } => ParseResult::Ok {
+        input,
+        output: map_fn(output, state.clone()),
+        location,
+        state,
+        bound,
       },
-      ParseResult::Err {
-        message,
-        from,
-        to,
-        state: error_state,
-      } => ParseResult::Err {
-        message,
-        from,
-        to,
-        state: error_state,
-      }
+      ParseResult::Err { message, from, to, state, bound } =>
+        ParseResult::Err { message, from, to, state, bound }
     }
   )
 }
@@ -526,7 +516,8 @@ where
   P: Parser<'a, A, S>
 {
   move |mut input, mut location, mut state: S| {
-    let mut result = Vec::new();
+    let mut output = Vec::new();
+    let mut bound = false;
 
     match parser.parse(input, location, state.clone()) {
       ParseResult::Ok {
@@ -534,19 +525,22 @@ where
         output: first_item,
         location: next_location,
         state: next_state,
+        bound: next_bound,
       } => {
         input = next_input;
         location = next_location;
         state = next_state;
-        result.push(first_item);
+        bound = next_bound;
+        output.push(first_item);
       }
       ParseResult::Err {
         message,
         from,
         to,
-        state
+        state,
+        bound,
       } => {
-        return ParseResult::Err { message, from, to, state };
+        return ParseResult::Err { message, from, to, state, bound };
       }
     }
 
@@ -557,22 +551,18 @@ where
           output: next_item,
           location: next_location,
           state: next_state,
+          ..
         } => {
           input = next_input;
           location = next_location;
           state = next_state;
-          result.push(next_item);
+          output.push(next_item);
         },
         ParseResult::Err {..} => break
       }
     }
 
-    ParseResult::Ok {
-      input: input,
-      output: result,
-      location: location,
-      state: state,
-    }
+    ParseResult::Ok { input, output, location, state, bound }
   }
 }
 
@@ -587,9 +577,10 @@ where
         from: location,
         to: location,
         state,
+        bound: false,
       }
     } else {
-      ParseResult::Ok { input, output, location, state }
+      ParseResult::Ok { input, output, location, state, bound: false }
     }
   )
 }
@@ -601,65 +592,136 @@ where
 {
   BoxedParser::new(
     move |mut input, mut location, mut state: S| {
-    let mut result = Vec::new();
+    let mut output = Vec::new();
+    let mut bound = false;
 
     while let ParseResult::Ok {
       input: next_input,
       output: next_item,
       location: next_location,
       state: next_state,
+      bound: next_bound,
     } = parser.parse(input, location, state.clone())
     {
       input = next_input;
       location = next_location;
       state = next_state;
-      result.push(next_item);
+      bound = next_bound;
+      output.push(next_item);
     }
 
-    ParseResult::Ok {
-      input: input,
-      output: result,
-      location: location,
-      state: state,
-    }
+    ParseResult::Ok { input, output, location, state, bound }
   })
 }
 
-/// Match any single character, usually used together with `pred`.
-/// 
-/// Exmaple:
-/// ```
-/// # use lip::*;
-/// # use crate::lip::Parser;
-/// pub fn whole_decimal<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
-///   one_or_more(
-///     any_char().pred(
-///     &(| c: &char | c.is_digit(10)),
-///     "a whole decimal number"
-///     )
-///   ).map(| digits | digits.iter().collect::<String>().parse().unwrap())
-/// }
-/// ```
-/// The above uses `any_char` coupled with `pred` to parse a whole decimal number.
-/// See [whole_decimal](fn.whole_decimal.html) for more details.
-pub fn any_char<'a, S: Clone + 'a>() -> impl Parser<'a, char, S> {
-  |input: &'a str, location: Location, state| match input.chars().next() {
+/// Match any single character, internally used together with `pred`.
+fn any_char<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, char, S> {
+  move |input: &'a str, location: Location, state| match input.chars().next() {
     Some(character) => ParseResult::Ok {
       input: &input[character.len_utf8()..],
       output: character,
       location: increment_col(character.len_utf8(), location),
       state,
+      bound: false,
     },
     _ => ParseResult::Err {
-      message: "I'm expecting any character but reached the end of input.".to_string(),
+      message: format!("I'm expecting {} but reached the end of input.", expecting),
       from: location,
       to: location,
       state,
+      bound: false,
     },
   }
 }
 
-fn pred<'a, P, F, A: std::fmt::Display, S: Clone + 'a>(parser: P, predicate: &'a F, expecting: &'a str) -> impl Parser<'a, A, S>
+/// Chomp one character if it passes the test.
+pub fn chomp_if<'a, F: 'a, S: Clone + 'a>(predicate: F, expecting: &'a str) -> BoxedParser<'a, (), S>
+where
+  F: Fn(&char) -> bool,
+{
+  any_char(expecting).pred(predicate, expecting).ignore()
+}
+
+/// Chomp zero or more characters if they pass the test.
+/// 
+/// This is commonly useful for chomping whiespaces and variable names:
+/// ```
+/// # use lip::*;
+/// fn space0<'a, S: Clone + 'a>() -> impl Parser<'a, (), S> {
+///   chomp_while0(|c: &char| *c == ' ', "a whitespace")
+/// }
+/// ```
+/// See [variable](fn.variable.html) for how this can be used to chomp variable names.
+pub fn chomp_while0<'a, F: 'a, S: Clone + 'a>(predicate: F, expecting: &'a str) -> BoxedParser<'a, (), S>
+where
+  F: Fn(&char) -> bool,
+{
+  zero_or_more(chomp_if(predicate, expecting)).ignore()
+}
+
+/// Chomp one or more characters if they pass the test.
+/// 
+/// This can be used to chomp digits:
+/// ```
+/// # use lip::*;
+/// fn digits<'a, S: Clone + 'a>() -> impl Parser<'a, String, S> {
+///   take_chomped(chomp_while1(
+///     &(| character: &char | character.is_digit(10)),
+///     "decimal digits"
+///   ))
+/// }
+/// ```
+/// See [digits](fn.digits.html) for a more complete digits parser with leading zero checks.
+pub fn chomp_while1<'a, F: 'a, S: Clone + 'a>(predicate: F, expecting: &'a str) -> BoxedParser<'a, (), S>
+where
+  F: Fn(&char) -> bool,
+{
+  one_or_more(chomp_if(predicate, expecting)).ignore()
+}
+
+/// Take the chomped string from a bunch of chompers.
+/// 
+/// Sometimes parsers like `int` or `variable` cannot do exactly what you need.
+/// The "chomping" family of functions is meant for that case!
+/// Maybe you need to parse valid [PHP variables](https://www.w3schools.com/php/php_variables.asp) like `$x` and `$txt`:
+/// ```
+/// # use lip::*;
+/// fn php_variable<'a, S: Clone + 'a>() -> impl Parser<'a, String, S> {
+///   take_chomped(chain!(
+///     chomp_if(|c: &char| *c == '$', "a '$'"),
+///     chomp_if(|c: &char| c.is_alphabetic() || *c == '_', "a letter or a '_'"),
+///     chomp_while0(|c: &char| c.is_alphanumeric() || *c == '_', "a letter, digit, or '_'")
+///   ))
+/// }
+/// ```
+pub fn take_chomped<'a, P, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, String, S>
+where
+  P: Parser<'a, A, S>
+{
+  move |input, location, state|
+    match parser.parse(input, location, state) {
+      ParseResult::Ok {
+        input: next_input,
+        location: next_location,
+        state: next_state,
+        ..
+      } => ParseResult::Ok {
+          input: next_input,
+          output: get_difference(input, next_input).to_string(),
+          location: next_location,
+          state: next_state,
+          bound: true,
+        },
+      ParseResult::Err { message, from, to , state, bound } =>
+        ParseResult::Err { message, from, to , state, bound }
+    }
+}
+
+fn get_difference<'a>(whole_str: &'a str, substr: &'a str) -> &'a str {
+  &whole_str[..whole_str.len() - substr.len()]
+}
+
+fn pred<'a, P, F, A: std::fmt::Display, S: Clone + 'a>(parser: P, predicate: F, expecting: &'a str) -> impl Parser<'a, A, S>
 where
   P: Parser<'a, A, S>,
   F: Fn(&A) -> bool,
@@ -670,12 +732,14 @@ where
       output: content,
       location: next_location,
       state: next_state,
+      bound: next_bound,
     } => if predicate(&content) {
       ParseResult::Ok {
         input: next_input,
         output: content,
         location: next_location,
         state: next_state,
+        bound: true,
       }
     } else {
       ParseResult::Err {
@@ -688,28 +752,19 @@ where
         from: location,
         to: next_location,
         state: next_state,
-        }
+        bound: next_bound,
+      }
     },
-    _ => ParseResult::Err {
-      message: format!(
-        "I'm expecting {} but found {}.",
-        expecting,
-        display_token(input.chars().next())
-      )
-      .to_string(),
-      from: location,
-      to: location,
-      state,
-    },
+    err @ ParseResult::Err { .. } => err,
   }
 }
 
 /// Parse a single space character.
 pub fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
-  any_char().pred(
+  chomp_if(
     &(|c: &char| *c == ' '),
     "a whitespace",
-  ).ignore()
+  )
 }
 
 /// Parse a single newline character.
@@ -721,7 +776,7 @@ pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
       let mut next_input: &str = input;
       let mut next_location: Location = location;
       let mut next_state: S = state.clone();
-      let result1 = any_char().pred(
+      let result1 = chomp_if(
         &(|c: &char| *c == '\r'),
         "a carriage return",
       ).parse(input, location, state);
@@ -738,33 +793,16 @@ pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
         }
         _ => {}
       }
-      let result = any_char().pred(
+      let result = chomp_if(
         &(|c: &char| *c == '\n'),
         "a newline",
       ).parse(next_input, next_location, next_state);
       match result {
-        ParseResult::Ok {
-          input: next_input,
-          output,
-          location: next_location,
-          state: next_state,
-        } => ParseResult::Ok {
-          input: next_input,
-          output: output,
-          location: increment_row(1, next_location),
-          state: next_state,
+        ParseResult::Ok { input, output, location, state, bound } => ParseResult::Ok {
+          input, output, state, bound,
+          location: increment_row(1, location)
         },
-        ParseResult::Err {
-          message: error_message,
-          from,
-          to,
-          state,
-        } => ParseResult::Err {
-          message: error_message,
-          from,
-          to,
-          state,
-        }
+        err @ ParseResult::Err { .. } => err,
       }
     }).ignore()
   )
@@ -832,14 +870,16 @@ fn repeat<'a, A, P, S: Clone + 'a>(times: usize, parser: P)
     P: Parser<'a, A, S>
 {
   move |mut input, mut location, mut state: S| {
-    let mut result = Vec::new();
+    let mut output = Vec::new();
+    let mut bound = false;
 
     if times == 0 {
       return ParseResult::Ok {
         input,
         location,
-        output: result,
+        output,
         state,
+        bound,
       }
     }
 
@@ -850,7 +890,7 @@ fn repeat<'a, A, P, S: Clone + 'a>(times: usize, parser: P)
       output: next_item,
       location: next_location,
       state: next_state,
-      ..
+      bound: next_bound,
     } = parser.parse(input, location, state.clone())
     {
       if counter >= times {
@@ -859,16 +899,12 @@ fn repeat<'a, A, P, S: Clone + 'a>(times: usize, parser: P)
       input = next_input;
       location = next_location;
       state = next_state;
-      result.push(next_item);
+      output.push(next_item);
       counter = counter + 1;
+      bound = next_bound;
     }
 
-    ParseResult::Ok {
-      input: input,
-      output: result,
-      location: location,
-      state: state,
-    }
+    ParseResult::Ok { input, output, location, state, bound }
   }
 }
 
@@ -896,8 +932,12 @@ pub fn either<'a, A, P: 'a, S: Clone + 'a>(parser1: P, parser2: P)
     move |input, location, state: S| {
       let result = match parser1.parse(input, location, state.clone()) {
         ok @ ParseResult::Ok {..} => ok,
-        ParseResult::Err {..} =>
-          parser2.parse(input, location, state)
+        ParseResult::Err { message, from, to, state, bound } =>
+          if bound {
+            ParseResult::Err { message, from, to, state, bound }
+          } else {
+            parser2.parse(input, location, state)
+          }
       };
       result
     }
@@ -921,6 +961,7 @@ pub fn optional<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(default: A, parser: P)
           location,
           output: default.clone(),
           state,
+          bound: true,
         }
       )
   )
@@ -944,7 +985,7 @@ pub fn newline_with_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> 
 pub fn line_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> BoxedParser<'a, (), S> {
   chain!(
     token(comment_symbol),
-    zero_or_more(any_char().pred(
+    zero_or_more(chomp_if(
       &(|c: &char| *c != '\n' && *c != '\r'),
       "any character",
     )),
@@ -959,14 +1000,9 @@ pub fn line_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> BoxedPar
 /// # #[macro_use] extern crate lip;
 /// # use lip::*;
 /// # use crate::lip::Parser;
-/// assert_eq!(
-///   chain!(token("a"), token("b"), token("c")).parse("abc", Location { row: 1, col: 1 }, ()),
-///   ParseResult::Ok {
-///     input: "",
-///     location: Location { row: 1, col: 4 },
-///     output: ("a", ("b", "c")),
-///     state: (),
-///   }
+/// succeed(
+///   chain!(token("a"), token("b"), token("c")),
+///   "abc", ("a", ("b", "c"))
 /// );
 /// ```
 /// The above example parses the letters "a", "b", and "c" in sequence and returns
@@ -1043,13 +1079,11 @@ pub fn float<'a, S: Clone + 'a>() -> impl Parser<'a, f64, S> {
 }
 
 fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl Parser<'a, String, S> {
-  one_or_more(
-    any_char().pred(
-    &(| character: &char | character.is_digit(10))
-    , name
-    )
-  ).update(move |input, digits, location, state|
-    if !allow_leading_zeroes && digits[0] == '0' && digits.len() > 1 {
+  take_chomped(chomp_while1(
+    &(| character: &char | character.is_digit(10)),
+    name
+  )).update(move |input, digits, location, state|
+    if !allow_leading_zeroes && digits.chars().next() == Some('0') && digits.len() > 1 {
       ParseResult::Err {
         message: format!("You can't have leading zeroes in {}.", name),
         from: Location {
@@ -1058,13 +1092,15 @@ fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl 
         },
         to: location,
         state,
+        bound: false,
       }
     } else {
       ParseResult::Ok {
         input,
-        output: digits.iter().collect::<String>(),
+        output: digits,
         location,
-        state
+        state,
+        bound: true,
       }
     }
   )
@@ -1076,46 +1112,28 @@ fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl 
 /// ```
 /// # use lip::*;
 /// let reserved = &([ "Func", "Import", "Export" ].iter().cloned().map(| element | element.to_string()).collect());
-/// assert_eq!(
-///   variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a PascalCase variable")
-///     .parse("Dict", Location { row: 1, col: 1}, ()),
-///   ParseResult::Ok {
-///     input: "",
-///     output: "Dict".to_string(),
-///     location: Location { row: 1, col: 5 },
-///     state: (),
-///   }
+/// succeed(
+///   variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a PascalCase variable"),
+///   "Dict", "Dict".to_string()
 /// );
 /// ```
 /// If we want to parse a snake_case variable, we can try something like:
 /// ```
 /// # use lip::*;
 /// # use std::collections::HashSet;
-/// assert_eq!(
-///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable")
-///    .parse("my_variable_1", Location { row: 1, col: 1}, ()),
-///  ParseResult::Ok {
-///    input: "",
-///    output: "my_variable_1".to_string(),
-///    location: Location { row: 1, col: 14 },
-///    state: (),
-///  }
-///);
+/// succeed(
+///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable"),
+///  "my_variable_1", "my_variable_1".to_string()
+/// );
 /// ```
 /// The below uses the same snake_case variable parser. However, the separator `_` appeared at the end of the name `invalid_variable_name_`:
 /// ```
 /// # use lip::*;
 /// # use std::collections::HashSet;
-/// assert_eq!(
-///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable")
-///    .parse("invalid_variable_name_", Location { row: 1, col: 1}, ()),
-///  ParseResult::Err {
-///    message: "I'm expecting a snake_case variable but found `invalid_variable_name_` ended with the separator `_`.".to_string(),
-///    from: Location { row: 1, col: 1 },
-///    to: Location { row: 1, col: 23 },
-///    state: (),
-///  }
-///);
+/// fail(
+///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable"),
+///  "invalid_variable_name_", "I'm expecting a snake_case variable but found `invalid_variable_name_` ended with the separator `_`."
+/// );
 /// ```
 pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner: &'a F2, separator: &'a F3, reserved: &'a HashSet<String>, expecting: &'a str) -> impl Parser<'a, String, S>
   where
@@ -1123,15 +1141,10 @@ pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner:
     F2: Fn(&char) -> bool,
     F3: Fn(&char) -> bool,
 {
-  chain!(
-    any_char().pred(start, expecting),
-    zero_or_more(one_of!(
-      any_char().pred(separator, expecting),
-      any_char().pred(inner, expecting)
-    ))
-  ).update(move |input, (start_char, mut inner_chars), location, state| {
-    inner_chars.insert(0, start_char);
-    let name = inner_chars.iter().collect::<String>();
+  take_chomped(pair(
+    chomp_if(start, expecting),
+    chomp_while0(move |c: &char| inner(c) || separator(c), expecting)
+  )).update(move |input, name, location, state| {
     if reserved.contains(&name) {
       ParseResult::Err {
         message: format!("I'm expecting {} but found a reserved word `{}`.", expecting, name),
@@ -1141,6 +1154,7 @@ pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner:
         },
         to: location,
         state,
+        bound: false,
       }
     } else {
       if name.chars().zip(name[1..].chars()).any(|(c, next_c)| separator(&c) && separator(&next_c)) {
@@ -1152,6 +1166,7 @@ pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner:
           },
           to: location,
           state,
+          bound: false,
         }
       } else if separator(&name.chars().last().unwrap()) {
         ParseResult::Err {
@@ -1162,57 +1177,69 @@ pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner:
           },
           to: location,
           state,
+          bound: false,
         }
       } else {
         ParseResult::Ok {
-          input, location, output: name.clone(), state,
+          input, location, output: name.clone(), state, bound: true,
         }  
       }
     }
   })
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 enum Trailing {
   Forbidden,
   Optional,
   Mandatory,
 }
 
-#[derive(Clone)]
-struct SequenceArgs<'a, A: 'a, S: 'a> {
+fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
   start: &'static str,
-  separator: &'static str,
-  end: &'static str,
-  spaces: BoxedParser<'a, (), S>,
   item: BoxedParser<'a, A, S>,
-  trailing: Trailing,
-}
-
-fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(args: &'a SequenceArgs<'a, A, S>) -> BoxedParser<'a, Vec<A>, S> {
-  chain!(
-    token(args.start),
-    args.spaces.clone(),
+  separator: &'static str,
+  spaces: BoxedParser<'a, (), S>,
+  end: &'static str,
+  trailing: Trailing
+) -> BoxedParser<'a, Vec<A>, S> {
+  wrap(
+    pair(
+      token(start),
+      spaces.clone(),
+    ),
     optional(
       vec![],
-      chain!(
-        args.item.clone(),
-        zero_or_more(right(wrap(args.spaces.clone(), token(args.separator), args.spaces.clone()), args.item.clone()))
+      pair(
+        item.clone(),
+        left(
+          zero_or_more(right(wrap(spaces.clone(), token(separator), spaces.clone()), item.clone())),
+          right(
+            spaces.clone(),
+            match trailing {
+              Trailing::Forbidden =>
+                token(""),
+              Trailing::Optional =>
+                optional("", token(separator)),
+              Trailing::Mandatory =>
+                token(separator)
+            }
+          )
+        )
       ).map(move |(first_item, mut rest_items)| {
         rest_items.insert(0, first_item);
         rest_items
       })
     ),
-    match args.trailing {
-      Trailing::Forbidden =>
-        token(""),
-      Trailing::Optional =>
-        optional("", token(args.end)),
-      Trailing::Mandatory =>
-        token(args.end)
-    }
-  ).map(|(_, (_, (items, _)))|
-    items
+    pair(
+      match trailing {
+        Trailing::Forbidden =>
+          token("").ignore(),
+        _ =>
+          spaces,
+      },
+      token(end),
+    ),
   )
 }
 
@@ -1222,10 +1249,10 @@ fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(args: &'a SequenceArgs<'a, A, S>) 
 /// Parsing a double-quoted string.
 /// ```
 /// # use lip::*;
-/// assert_eq!(
-///  succeed(wrap(token("\""), one_or_more(any_char().pred(&(|c: &char| *c != '"'), "string")).map(|chars| chars.iter().collect::<String>()), token("\"")), "\"I, have 1 string here\""),
-///  "I, have 1 string here",
-/// );
+/// succeed(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here\"",
+///   "I, have 1 string here".to_string());
+/// fail(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here",
+///   "I'm expecting a `\"` but found nothing.");
 /// ```
 pub fn wrap<'a, A: 'a, B: 'a, C: 'a, S: Clone + 'a, P1: 'a, P2: 'a, P3: 'a>(left_delimiter: P1, wrapped: P2, right_delimiter: P3) -> BoxedParser<'a, B, S>
 where
@@ -1251,41 +1278,33 @@ pub fn located<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, Locate
     P: Parser<'a, A, S>
 {
   move |input, location, state|
-  match parser.parse(input, location, state) {
-    ParseResult::Ok {
-      input: next_input,
-      output,
-      location: next_location,
-      state: next_state,
-    } => ParseResult::Ok {
+    match parser.parse(input, location, state) {
+      ParseResult::Ok {
         input: next_input,
-        output: Located {
-          value: output,
-          from: Location {
-            row: location.row,
-            col: location.col,
-          },
-          to: Location {
-            row: next_location.row,
-            col: next_location.col,
-          },
-        },
+        output,
         location: next_location,
         state: next_state,
-      },
-    ParseResult::Err {
-      message: error_message,
-      from,
-      to,
-      state,
-    } =>
-      ParseResult::Err {
-        message: error_message,
-        from,
-        to,
-        state,
-      }
-  }
+        ..
+      } => ParseResult::Ok {
+          input: next_input,
+          output: Located {
+            value: output,
+            from: Location {
+              row: location.row,
+              col: location.col,
+            },
+            to: Location {
+              row: next_location.row,
+              col: next_location.col,
+            },
+          },
+          location: next_location,
+          state: next_state,
+          bound: true,
+        },
+      ParseResult::Err { message, from, to , state, bound } =>
+        ParseResult::Err { message, from, to , state, bound }
+    }
 }
 
 /// Pretty print the error.
@@ -1322,25 +1341,16 @@ fn update_state<'a, P, A: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl Pars
         location: next_location,
         state: next_state,
         output,
+        bound,
       } =>
         ParseResult::Ok {
           input: next_input,
           output: output.clone(),
           location: next_location,
           state: f(output, next_state),
+          bound,
         },
-      ParseResult::Err {
-        message,
-        from,
-        to,
-        state,
-      } =>
-        ParseResult::Err {
-          message,
-          from,
-          to,
-          state,
-        }
+      err @ ParseResult::Err { .. } => err,
     }
   }
 }
@@ -1357,36 +1367,33 @@ fn update<'a, P, A: Clone, B: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl 
         location: next_location,
         state: next_state,
         output,
+        ..
       } =>
         f(next_input, output, next_location, next_state),
-      ParseResult::Err {
-        message,
-        from,
-        to,
-        state,
-      } =>
-        ParseResult::Err {
-          message,
-          from,
-          to,
-          state,
-        }
+      ParseResult::Err { message, from, to , state, bound } =>
+        ParseResult::Err { message, from, to , state, bound }
     }
   }
 }
 
 #[doc(hidden)]
-pub fn succeed<'a, P: 'a, A: 'a>(parser: P, source: &'a str) -> A
+pub fn succeed<'a, P: 'a, A: PartialEq + Debug + 'a>(parser: P, source: &'a str, expected: A)
 where
   P: Parser<'a, A, ()>
 {
-  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap(source)
+  assert_eq!(
+    parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap(source),
+    expected
+  )
 }
 
 #[doc(hidden)]
-pub fn fail<'a, P: 'a, A: Debug + 'a>(parser: P, source: &'a str) -> ParseResult<'a, A, ()>
+pub fn fail<'a, P: 'a, A: Debug + 'a>(parser: P, source: &'a str, message: &'a str)
 where
   P: Parser<'a, A, ()>
 {
-  parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap_err(source)
+  assert_eq!(
+    parser.parse(source, Location { row: 1, col: 1 }, ()).unwrap_err(),
+    message
+  )
 }
