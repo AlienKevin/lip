@@ -1188,14 +1188,46 @@ pub fn variable<'a, S: Clone + 'a, F1: 'a, F2: 'a, F3: 'a>(start: &'a F1, inner:
   })
 }
 
+/// What’s the deal with trailing commas? Are they Forbidden? Are they Optional? Are they Mandatory?
 #[derive(Copy, Clone)]
-enum Trailing {
+pub enum Trailing {
   Forbidden,
   Optional,
   Mandatory,
 }
 
-fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
+/// Parse a sequence like lists or code blocks.
+/// 
+/// Example:
+/// Parse a list containing the string "abc" with optional trailing comma:
+/// ```
+/// # use lip::*;
+/// succeed(sequence(
+///   "[",
+///   token("abc"),
+///   ",",
+///   space0(),
+///   "]",
+///   Trailing::Optional),
+/// "[abc, abc, abc]", vec!["abc", "abc", "abc"]);
+/// ```
+/// Note: `spaces` are inserted between every part.
+/// So if you use `space1` instead of `space0`, you need to
+/// put more spaces before and after separators, between
+/// start symbol and first item and between last item or separator
+/// and the end symbol:
+/// ```
+/// # use lip::*;
+/// succeed(sequence(
+///   "[",
+///   token("abc"),
+///   ",",
+///   space1(),
+///   "]",
+///   Trailing::Optional),
+/// "[ abc , abc , abc ]", vec!["abc", "abc", "abc"]);
+/// ```
+pub fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
   start: &'static str,
   item: BoxedParser<'a, A, S>,
   separator: &'static str,
@@ -1220,9 +1252,9 @@ fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
               Trailing::Forbidden =>
                 token(""),
               Trailing::Optional =>
-                optional("", token(separator)),
+                optional("", left(token(separator), spaces.clone())),
               Trailing::Mandatory =>
-                token(separator)
+                left(token(separator), spaces.clone())
             }
           )
         )
@@ -1231,15 +1263,7 @@ fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
         rest_items
       })
     ),
-    pair(
-      match trailing {
-        Trailing::Forbidden =>
-          token("").ignore(),
-        _ =>
-          spaces,
-      },
-      token(end),
-    ),
+    token(end),
   )
 }
 
