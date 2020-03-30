@@ -609,6 +609,24 @@ macro_rules! succeed {
   };
 }
 
+/// Indicate that a parser has reached a dead end.
+/// 
+/// "Everything was going fine until I ran into this problem."
+pub fn problem<'a, F1, F2, A, S: Clone + 'a>(message: String, from: F1, to: F2) -> impl Parser<'a, A, S>
+where
+  F1: Fn(Location) -> Location,
+  F2: Fn(Location) -> Location,
+{
+  move |_input, location, state|
+    ParseResult::Err {
+      message: message.clone(),
+      from: from(location),
+      to: to(location),
+      state,
+      bound: false
+    }
+}
+
 /// Run the left parser, then the right, last keep the right result and discard the left.
 fn right<'a, P1: 'a, P2: 'a, R1: 'a, R2: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, R2, S>
 where
