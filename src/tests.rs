@@ -8,15 +8,9 @@ use std::fmt::Debug;
 
 #[test]
 fn test_one_of() {
-  succeed(one_of!(token("a"), token("b"), token("c")), "c", "c");
-  fail(one_of!(token("a"), token("b"), token("c")), "", "I'm expecting a `c` but found nothing.");
-  fail(one_of!(token("a"), token("b"), token("c")), "w", "I'm expecting a `c` but found `w`.");
-}
-
-#[test]
-fn test_chain() {
-  succeed(chain!(token("a"), token("b"), token("c")), "abc", ("a", ("b", "c")));
-  fail(chain!(token("a"), token("b"), token("d")), "abc", "I'm expecting a `d` but found `c`.");
+  assert_succeed(one_of!(token("a"), token("b"), token("c")), "c", "c");
+  assert_fail(one_of!(token("a"), token("b"), token("c")), "", "I'm expecting a `c` but found nothing.");
+  assert_fail(one_of!(token("a"), token("b"), token("c")), "w", "I'm expecting a `c` but found `w`.");
 }
 
 #[test]
@@ -89,115 +83,115 @@ fn test_update() {
 
 #[test]
 fn test_token() {
-  succeed(token(""), "aweiow", "");
+  assert_succeed(token(""), "aweiow", "");
 }
 
 #[test]
 fn test_variable() {
   let reserved = &([ "Func", "Import", "Export" ].iter().cloned().map(| element | element.to_string()).collect());
-  succeed(variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name"),
+  assert_succeed(variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name"),
     "Dict", "Dict".to_string());
-  fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name"),
+  assert_fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name"),
     "dict", "I'm expecting a capitalized name but found `d`.");
-  fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name"),
+  assert_fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a capitalized name"),
     "Export", "I'm expecting a capitalized name but found a reserved word `Export`.");
-  succeed(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name"),
+  assert_succeed(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name"),
     "Main.Local$frame3", "Main.Local$frame3".to_string());
-  fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name"),
+  assert_fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name"),
     "Main.Local$$frame3", "I'm expecting a variable name but found `Main.Local$$frame3` with duplicated separators.");
-  fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name"),
+  assert_fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name"),
     "Main.Local$frame3$", "I'm expecting a variable name but found `Main.Local$frame3$` ended with the separator `$`.");
 }
 
 #[test]
 fn test_end() {
-  succeed(token("abc").end(), "abc", "abc");
-  fail(token("abc").end(), "abcd", "I'm expecting the end of input.");
+  assert_succeed(token("abc").end(), "abc", "abc");
+  assert_fail(token("abc").end(), "abcd", "I'm expecting the end of input.");
 } 
 
 #[test]
 fn test_one_or_more() {
-  succeed(one_or_more(token("a")), "a", vec!["a"]);
-  succeed(one_or_more(token("a")), "aaaa", vec!["a", "a", "a", "a"]);
-  fail(one_or_more(token("a")), "bbc", "I'm expecting a `a` but found `b`.");
+  assert_succeed(one_or_more(token("a")), "a", vec!["a"]);
+  assert_succeed(one_or_more(token("a")), "aaaa", vec!["a", "a", "a", "a"]);
+  assert_fail(one_or_more(token("a")), "bbc", "I'm expecting a `a` but found `b`.");
 }
 
 #[test]
 fn test_int() {
-  succeed(int(), "2000892303900", 2000892303900);
-  succeed(int(), "0", 0);
-  fail(int(), "01", "You can't have leading zeroes in an integer.");
-  fail(int(), "0010", "You can't have leading zeroes in an integer.");
+  assert_succeed(int(), "2000892303900", 2000892303900);
+  assert_succeed(int(), "0", 0);
+  assert_fail(int(), "01", "You can't have leading zeroes in an integer.");
+  assert_fail(int(), "0010", "You can't have leading zeroes in an integer.");
 }
 
 #[test]
 fn test_float() {
-  succeed(float(), "123", 123_f64);
-  succeed(float(), "3.1415", 3.1415_f64);
-  succeed(float(), "0.1234", 0.1234_f64);
-  succeed(float(), "1e-42", 1e-42_f64);
-  succeed(float(), "6.022e23", 6.022e23_f64);
-  succeed(float(), "6.022E+23", 6.022E+23_f64);
-  succeed(float(), "6.022e-23", 6.022E-23_f64);
-  fail(float(), ".023", "I'm expecting a floating point number but found `.`.");
-  fail(float(), "023.99", "You can't have leading zeroes in a floating point number.");
-  fail(float(), "r33", "I'm expecting a floating point number but found `r`.");
-  fail(float(), "-33", "I'm expecting a floating point number but found `-`.");
+  assert_succeed(float(), "123", 123_f64);
+  assert_succeed(float(), "3.1415", 3.1415_f64);
+  assert_succeed(float(), "0.1234", 0.1234_f64);
+  assert_succeed(float(), "1e-42", 1e-42_f64);
+  assert_succeed(float(), "6.022e23", 6.022e23_f64);
+  assert_succeed(float(), "6.022E+23", 6.022E+23_f64);
+  assert_succeed(float(), "6.022e-23", 6.022E-23_f64);
+  assert_fail(float(), ".023", "I'm expecting a floating point number but found `.`.");
+  assert_fail(float(), "023.99", "You can't have leading zeroes in a floating point number.");
+  assert_fail(float(), "r33", "I'm expecting a floating point number but found `r`.");
+  assert_fail(float(), "-33", "I'm expecting a floating point number but found `-`.");
 }
 
 #[test]
 fn test_wrap() {
-  succeed(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here\"",
+  assert_succeed(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here\"",
     "I, have 1 string here".to_string());
-  fail(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here",
+  assert_fail(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here",
     "I'm expecting a `\"` but found nothing.");
 }
 
 #[test]
 fn test_sequence() {
-  succeed(sequence(
+  assert_succeed(sequence(
     "[",
     token("abc"),
     ",",
     space0(),
     "]",
     Trailing::Optional), "[ abc , abc , abc ]", vec!["abc", "abc", "abc"]);
-  succeed(sequence(
+  assert_succeed(sequence(
     "[",
     token("abc"),
     ",",
     space0(),
     "]",
     Trailing::Optional), "[ abc , abc  , abc , ]", vec!["abc", "abc", "abc"]);
-  fail(sequence(
+  assert_fail(sequence(
     "[",
     token("abc"),
     ",",
     space0(),
     "]",
     Trailing::Forbidden), "[ abc , abc  , abc  , ]", "I\'m expecting a `]` but found `,`.");
-  succeed(sequence(
+  assert_succeed(sequence(
     "[",
     token("abc"),
     ",",
     space0(),
     "]",
     Trailing::Mandatory), "[ abc, abc , abc  ,  ]", vec!["abc", "abc", "abc"]);
-  fail(sequence(
+  assert_fail(sequence(
     "[",
     token("abc"),
     ",",
     space0(),
     "]",
     Trailing::Mandatory), "[abc, abc  , abc ]", "I\'m expecting a `,` but found `]`.");
-  succeed(sequence(
+  assert_succeed(sequence(
     "[",
     token("abc"),
     ",",
     space1(),
     "]",
     Trailing::Mandatory), "[ abc , abc  , abc , ]", vec!["abc", "abc", "abc"]);
-  succeed(sequence(
+  assert_succeed(sequence(
     "[",
     token("abc"),
     ",",
@@ -209,7 +203,7 @@ fn test_sequence() {
   abc,
   abc,
 ]", vec!["abc", "abc", "abc"]);
-  succeed(sequence(
+  assert_succeed(sequence(
     "[",
     token("abc"),
     ",",
@@ -221,4 +215,57 @@ abc,
 abc,
 abc
 ]", vec!["abc", "abc", "abc"]);
+}
+
+#[test]
+fn test_keep() {
+  assert_succeed(
+    succeed!(|x, y| (x, y))
+      .keep(int())
+      .skip(token(","))
+      .keep(int()),
+    "2,3",
+    (2, 3),
+  );
+  assert_succeed(
+    succeed!(|x, y| (x, y))
+      .keep(int())
+      .skip(token(","))
+      .keep(int()),
+    "2,3",
+    (2, 3),
+  );
+  assert_fail(
+    succeed!(|x, y| (x, y))
+      .keep(int())
+      .skip(token(","))
+      .keep(int()),
+    "2,",
+    "I'm expecting an integer but reached the end of input.",
+  );
+}
+
+#[test]
+fn test_newline_with_comment() {
+  assert_succeed(
+    succeed!(|_| ())
+      .keep(token("abc"))
+      .skip(newline_with_comment("//")),
+    "abc // some comments here!\n",
+    ()
+  );
+  assert_fail(
+    succeed!(|_| ())
+      .keep(token("abc"))
+      .skip(newline_with_comment("//")),
+    "abc // some comments here!",
+    "I'm expecting a newline but reached the end of input."
+  );
+  assert_fail(
+    succeed!(|_| ())
+      .keep(token("abc"))
+      .skip(newline_with_comment("//")),
+    "abc -- some comments here!",
+    "I'm expecting a `//` but found `--`."
+  );
 }

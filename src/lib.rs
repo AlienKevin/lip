@@ -178,9 +178,25 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
 }
 
 pub trait Parser<'a, Output, State: Clone> {
-  /// Run the parser on a given input, starting at
+  /// Parse a given input, starting at
   /// a given location and state.
   fn parse(&self, input: &'a str, location: Location, state: State) -> ParseResult<'a, Output, State>;
+  /// Run the parser on a given input, starting at
+  /// the first character.
+  /// 
+  /// Exammple:
+  /// 
+  /// Parse a (x, y) position pair.
+  /// ```
+  /// # use lip::*;
+  /// // Parse an (x, y) position pair
+  /// let position = succeed!(|x, y| (x, y))
+  ///   .keep(int())
+  ///   .skip(token(","))
+  ///   .keep(int())
+  ///   .run("2, 3", ()); // position == (2, 3)
+  /// ```
+  fn run(&self, input: &'a str, state: State) -> ParseResult<'a, Output, State>;
   /// Map the output to a new output if parse succeeds.
   /// Otherwise, return error as usual.
   /// 
@@ -298,11 +314,11 @@ pub trait Parser<'a, Output, State: Clone> {
   /// If you want to parse an input containing only "abc":
   /// ```
   /// # use lip::*;
-  /// succeed(
+  /// assert_succeed(
   ///  token("abc").end(),
   ///  "abc", "abc",
   /// );
-  /// fail(
+  /// assert_fail(
   ///   token("abc").end(),
   ///   "abcd", "I'm expecting the end of input.",
   /// );
@@ -315,6 +331,55 @@ pub trait Parser<'a, Output, State: Clone> {
   {
     BoxedParser::new(end(self))
   }
+  /// Keep values in a parser pipeline.
+  /// 
+  /// Exammple:
+  /// 
+  /// Parse a (x, y) position pair.
+  /// ```
+  /// # use lip::*;
+  /// // Parse an (x, y) position pair
+  /// let position = succeed!(|x, y| (x, y))
+  ///   .keep(int())
+  ///   .skip(token(","))
+  ///   .keep(int())
+  ///   .run("2, 3", ()); // position == (2, 3)
+  /// ```
+  fn keep<A, B, ArgParser>(self, arg_parser: ArgParser)-> BoxedParser<'a, B, State>
+  where
+    Self: Sized + 'a,
+    A: 'a,
+    B: 'a,
+    State: 'a,
+    Output: FnOnce(A) -> B + 'a,
+    ArgParser: Parser<'a, A, State> + 'a,
+  {
+    BoxedParser::new(keep(self, arg_parser))
+  }
+  /// Skip values in a parser pipeline.
+  ///
+  /// Exammple:
+  /// 
+  /// Parse a (x, y) position pair.
+  /// ```
+  /// # use lip::*;
+  /// // Parse an (x, y) position pair
+  /// let position = succeed!(|x, y| (x, y))
+  ///   .keep(int())
+  ///   .skip(token(","))
+  ///   .keep(int())
+  ///   .run("2, 3", ()); // position == (2, 3)
+  /// ```
+  fn skip<P: 'a, A>(self, ignored_parser: P) -> BoxedParser<'a, Output, State>
+  where
+    Self: Sized + 'a,
+    A: 'a,
+    State: 'a,
+    Output: 'a,
+    P: Parser<'a, A, State>,
+  {
+    BoxedParser::new(left(self, ignored_parser))
+  }
 }
 
 impl<'a, F, Output, State: 'a> Parser<'a, Output, State> for F
@@ -324,6 +389,10 @@ where
 {
   fn parse(&self, input: &'a str, location: Location, state: State) -> ParseResult<'a, Output, State> {
     self(input, location, state)
+  }
+  fn run(&self, input: &'a str, state: State) -> ParseResult<'a, Output, State>
+  {
+    self(input, Location { row: 1, col: 1 }, state)
   }
 }
 
@@ -364,6 +433,9 @@ impl<'a, Output, State> Parser<'a, Output, State> for BoxedParser<'a, Output, St
   {
   fn parse(&self, input: &'a str, location: Location, state: State) -> ParseResult<'a, Output, State> {
       self.parser.parse(input, location, state)
+  }
+  fn run(&self, input: &'a str, state: State) -> ParseResult<'a, Output, State> {
+    self.parser.run(input, state)
   }
 }
 
@@ -437,7 +509,7 @@ fn display_token<T: Display>(token: Option<T>) -> String {
 
 /// Pair up two parsers. Run the left parser, then the right,
 /// and last combine both outputs into a tuple.
-pub fn pair<'a, P1, P2, R1, R2, S: Clone + 'a>(parser1: P1, parser2: P2) -> impl Parser<'a, (R1, R2), S>
+fn pair<'a, P1, P2, R1, R2, S: Clone + 'a>(parser1: P1, parser2: P2) -> impl Parser<'a, (R1, R2), S>
 where
   P1: Parser<'a, R1, S>,
   P2: Parser<'a, R2, S>,
@@ -493,7 +565,7 @@ where
 }
 
 /// Run the left parser, then the right, last keep the left result and discard the right.
-pub fn left<'a, P1: 'a, P2: 'a, R1: 'a, R2: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, R1, S>
+fn left<'a, P1: 'a, P2: 'a, R1: 'a, R2: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, R1, S>
 where
   P1: Parser<'a, R1, S>,
   P2: Parser<'a, R2, S>,
@@ -501,8 +573,44 @@ where
   map(pair(parser1, parser2), |(left, _right)| left)
 }
 
+fn keep<'a, P1: 'a, P2: 'a, F: 'a, A: 'a, B: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, B, S>
+where
+  F: FnOnce(A) -> B,
+  P1: Parser<'a, F, S>,
+  P2: Parser<'a, A, S>,
+{
+  map(pair(parser1, parser2), |(func, arg)| func(arg))
+}
+
+#[doc(hidden)]
+pub fn succeed_helper<'a, A: Clone + 'a, S: Clone + 'a>(output: A) -> impl Parser<'a, A, S> {
+  move |input, location, state |
+    ParseResult::Ok { input, location, state, output: output.clone(), bound: false }
+}
+
+/// A parser that succeeds without chomping any characters.
+/// 
+/// Seems weird on its own, but it is very useful in combination with other functions.
+/// The docs for [keep](trait.Parser.html#method.keep) and [and_then](trait.Parser.html#method.and_then) have some neat examples.
+#[macro_export]
+macro_rules! succeed {
+  (|$first_arg:ident $(, $arg:ident )*| $function_body:expr) => {
+    succeed_helper(move |$first_arg| $(move |$arg|)* {
+      $function_body
+    })
+  };
+  (|$first_arg:ident:$first_arg_type:ty $(, $arg:ident:$arg_type:ty )*| $function_body:expr) => {
+    succeed_helper(move |$first_arg:$first_arg_type| $(move |$arg:$arg_type|)* {
+      $function_body
+    })
+  };
+  ($value:expr) => {
+    succeed_helper($value)
+  };
+}
+
 /// Run the left parser, then the right, last keep the right result and discard the left.
-pub fn right<'a, P1: 'a, P2: 'a, R1: 'a, R2: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, R2, S>
+fn right<'a, P1: 'a, P2: 'a, R1: 'a, R2: 'a, S: Clone + 'a>(parser1: P1, parser2: P2) -> BoxedParser<'a, R2, S>
 where
   P1: Parser<'a, R1, S>,
   P2: Parser<'a, R2, S>,
@@ -687,11 +795,11 @@ where
 /// ```
 /// # use lip::*;
 /// fn php_variable<'a, S: Clone + 'a>() -> impl Parser<'a, String, S> {
-///   take_chomped(chain!(
-///     chomp_if(|c: &char| *c == '$', "a '$'"),
-///     chomp_if(|c: &char| c.is_alphabetic() || *c == '_', "a letter or a '_'"),
-///     chomp_while0(|c: &char| c.is_alphanumeric() || *c == '_', "a letter, digit, or '_'")
-///   ))
+///   take_chomped(succeed!(())
+///     .skip(chomp_if(|c: &char| *c == '$', "a '$'"))
+///     .skip(chomp_if(|c: &char| c.is_alphabetic() || *c == '_', "a letter or a '_'"))
+///     .skip(chomp_while0(|c: &char| c.is_alphanumeric() || *c == '_', "a letter, digit, or '_'"))
+///   )
 /// }
 /// ```
 pub fn take_chomped<'a, P, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, String, S>
@@ -760,7 +868,7 @@ where
 }
 
 /// Parse a single space character.
-pub fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
+fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   chomp_if(
     &(|c: &char| *c == ' '),
     "a whitespace",
@@ -770,7 +878,7 @@ pub fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
 /// Parse a single newline character.
 /// 
 /// Handles `\r\n` in Windows and `\n` on other platforms.
-pub fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
+fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
   BoxedParser::new(
     (move |input, location, state: S| {
       let mut next_input: &str = input;
@@ -923,6 +1031,7 @@ macro_rules! one_of {
 /// Choose either the left parser or the right parser to parse.
 /// 
 /// For choosing between more than two parsers, use [`one_of!`](macro.one_of!.html)
+#[doc(hidden)]
 pub fn either<'a, A, P: 'a, S: Clone + 'a>(parser1: P, parser2: P)
   -> BoxedParser<'a, A, S>
   where
@@ -970,51 +1079,24 @@ pub fn optional<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(default: A, parser: P)
 /// Parse a newline that maybe preceeded by a comment started with `comment_symbol`.
 pub fn newline_with_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> impl Parser<'a, (), S> {
   either(
-    chain!(
-      space0(),
-      line_comment(comment_symbol)
-    ),
-    chain!(
-      space0(),
-      newline_char()
-    ),
-  ).ignore()
+    succeed!(())
+      .skip(space0())
+      .skip(line_comment(comment_symbol)),
+    succeed!(())
+      .skip(space0())
+      .skip(newline_char())
+  )
 }
 
 /// Parse a line comment started with `comment_symbol`.
 pub fn line_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> BoxedParser<'a, (), S> {
-  chain!(
-    token(comment_symbol),
-    zero_or_more(chomp_if(
+  succeed!(())
+    .skip(token(comment_symbol))
+    .skip(zero_or_more(chomp_if(
       &(|c: &char| *c != '\n' && *c != '\r'),
       "any character",
-    )),
-    newline_char()
-  ).ignore()
-}
-
-/// Chain several parsers together and parse them in sequence.
-/// 
-/// Example:
-/// ```
-/// # #[macro_use] extern crate lip;
-/// # use lip::*;
-/// # use crate::lip::Parser;
-/// succeed(
-///   chain!(token("a"), token("b"), token("c")),
-///   "abc", ("a", ("b", "c"))
-/// );
-/// ```
-/// The above example parses the letters "a", "b", and "c" in sequence and returns
-/// a nested tuple `("a", ("b", "c"))` containing each of the parser outputs.
-#[macro_export]
-macro_rules! chain {
-  ($single_parser:expr) => { $single_parser };
-  ($first_parser:expr, $($parsers:expr),+) => {
-    $first_parser.and_then(move | output |
-      chain!($($parsers),*).map(move | next_output | (output.clone(), next_output) )
-    )
-  };
+    )))
+    .skip(newline_char())
 }
 
 /// Parses a decimal integer, excluding the sign in front.
@@ -1057,25 +1139,21 @@ pub fn int<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
 /// run float "6.022e+23" == Ok 6.022e23
 pub fn float<'a, S: Clone + 'a>() -> impl Parser<'a, f64, S> {
   let expecting = "a floating point number";
-  chain!(
-    digits(expecting, false),
-    optional(
+  succeed!(|whole: String, fraction: String, exponent: String|
+    (whole + &fraction + &exponent).parse().unwrap())
+    .keep(digits(expecting, false))
+    .keep(optional(
       "".to_string(),
       right(token("."), digits(expecting, true)).map(|digits| ".".to_owned() + &digits)
-    ),
-    optional(
+    ))
+    .keep(optional(
       "".to_string(),
-      chain!(
-        either(token("e"), token("E")),
-        optional("", either(token("+"), token("-"))),
-        digits(expecting, false)
-      ).map(|(_, (sign, exponent))|
-        "e".to_string() + sign + &exponent
+      succeed!(|sign: &'static str, exponent: String| "e".to_string() + sign + &exponent)
+        .skip(either(token("e"), token("E")))
+        .keep(optional("", either(token("+"), token("-"))))
+        .keep(digits(expecting, false))
       )
     )
-  ).map(|(whole, (fraction, exponent))|
-    (whole + &fraction + &exponent).parse().unwrap()
-  )
 }
 
 fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl Parser<'a, String, S> {
@@ -1112,7 +1190,7 @@ fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl 
 /// ```
 /// # use lip::*;
 /// let reserved = &([ "Func", "Import", "Export" ].iter().cloned().map(| element | element.to_string()).collect());
-/// succeed(
+/// assert_succeed(
 ///   variable(&(|c| c.is_uppercase()), &(|c| c.is_lowercase()), &(|_| false), reserved, "a PascalCase variable"),
 ///   "Dict", "Dict".to_string()
 /// );
@@ -1121,7 +1199,7 @@ fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl 
 /// ```
 /// # use lip::*;
 /// # use std::collections::HashSet;
-/// succeed(
+/// assert_succeed(
 ///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable"),
 ///  "my_variable_1", "my_variable_1".to_string()
 /// );
@@ -1130,7 +1208,7 @@ fn digits<'a, S: Clone + 'a>(name: &'a str, allow_leading_zeroes: bool) -> impl 
 /// ```
 /// # use lip::*;
 /// # use std::collections::HashSet;
-/// fail(
+/// assert_fail(
 ///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable"),
 ///  "invalid_variable_name_", "I'm expecting a snake_case variable but found `invalid_variable_name_` ended with the separator `_`."
 /// );
@@ -1202,7 +1280,7 @@ pub enum Trailing {
 /// Parse a list containing the string "abc" with optional trailing comma:
 /// ```
 /// # use lip::*;
-/// succeed(sequence(
+/// assert_succeed(sequence(
 ///   "[",
 ///   token("abc"),
 ///   ",",
@@ -1218,7 +1296,7 @@ pub enum Trailing {
 /// and the end symbol:
 /// ```
 /// # use lip::*;
-/// succeed(sequence(
+/// assert_succeed(sequence(
 ///   "[",
 ///   token("abc"),
 ///   ",",
@@ -1268,17 +1346,7 @@ pub fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
 }
 
 /// Wrap a parser with two other delimiter parsers
-/// 
-/// Example:
-/// Parsing a double-quoted string.
-/// ```
-/// # use lip::*;
-/// succeed(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here\"",
-///   "I, have 1 string here".to_string());
-/// fail(wrap(token("\""), take_chomped(chomp_while0(|c: &char| *c != '"', "string")), token("\"")), "\"I, have 1 string here",
-///   "I'm expecting a `\"` but found nothing.");
-/// ```
-pub fn wrap<'a, A: 'a, B: 'a, C: 'a, S: Clone + 'a, P1: 'a, P2: 'a, P3: 'a>(left_delimiter: P1, wrapped: P2, right_delimiter: P3) -> BoxedParser<'a, B, S>
+fn wrap<'a, A: 'a, B: 'a, C: 'a, S: Clone + 'a, P1: 'a, P2: 'a, P3: 'a>(left_delimiter: P1, wrapped: P2, right_delimiter: P3) -> BoxedParser<'a, B, S>
 where
   P1: Parser<'a, A, S>,
   P2: Parser<'a, B, S>,
@@ -1401,7 +1469,7 @@ fn update<'a, P, A: Clone, B: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl 
 }
 
 #[doc(hidden)]
-pub fn succeed<'a, P: 'a, A: PartialEq + Debug + 'a>(parser: P, source: &'a str, expected: A)
+pub fn assert_succeed<'a, P: 'a, A: PartialEq + Debug + 'a>(parser: P, source: &'a str, expected: A)
 where
   P: Parser<'a, A, ()>
 {
@@ -1412,7 +1480,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn fail<'a, P: 'a, A: Debug + 'a>(parser: P, source: &'a str, message: &'a str)
+pub fn assert_fail<'a, P: 'a, A: Debug + 'a>(parser: P, source: &'a str, message: &'a str)
 where
   P: Parser<'a, A, ()>
 {
