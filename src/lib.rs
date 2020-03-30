@@ -645,7 +645,7 @@ where
 {
   move |mut input, mut location, mut state: S| {
     let mut output = Vec::new();
-    let mut bound = false;
+    let mut end_bound = false;
 
     match parser.parse(input, location, state.clone()) {
       ParseResult::Ok {
@@ -658,7 +658,7 @@ where
         input = next_input;
         location = next_location;
         state = next_state;
-        bound = next_bound;
+        end_bound = next_bound;
         output.push(first_item);
       }
       ParseResult::Err {
@@ -690,7 +690,7 @@ where
       }
     }
 
-    ParseResult::Ok { input, output, location, state, bound }
+    ParseResult::Ok { input, output, location, state, bound: end_bound }
   }
 }
 
