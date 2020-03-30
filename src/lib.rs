@@ -583,9 +583,10 @@ where
 }
 
 #[doc(hidden)]
-pub fn succeed_helper<'a, A: Clone + 'a, S: Clone + 'a>(output: A) -> impl Parser<'a, A, S> {
-  move |input, location, state |
+pub fn succeed_helper<'a, A: Clone + 'a, S: Clone + 'a>(output: A) -> BoxedParser<'a, A, S> {
+  BoxedParser::new(move |input, location, state |
     ParseResult::Ok { input, location, state, output: output.clone(), bound: false }
+  )
 }
 
 /// A parser that succeeds without chomping any characters.
@@ -612,12 +613,12 @@ macro_rules! succeed {
 /// Indicate that a parser has reached a dead end.
 /// 
 /// "Everything was going fine until I ran into this problem."
-pub fn problem<'a, F1, F2, A, S: Clone + 'a>(message: String, from: F1, to: F2) -> impl Parser<'a, A, S>
+pub fn problem<'a, F1: 'a, F2: 'a, A: 'a, S: Clone + 'a>(message: String, from: F1, to: F2) -> BoxedParser<'a, A, S>
 where
   F1: Fn(Location) -> Location,
   F2: Fn(Location) -> Location,
 {
-  move |_input, location, state|
+  BoxedParser::new(move |_input, location, state|
     ParseResult::Err {
       message: message.clone(),
       from: from(location),
@@ -625,6 +626,7 @@ where
       state,
       bound: false
     }
+  )
 }
 
 /// Run the left parser, then the right, last keep the right result and discard the left.
