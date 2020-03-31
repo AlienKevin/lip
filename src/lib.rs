@@ -1098,14 +1098,12 @@ pub fn optional<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(default: A, parser: P)
 
 /// Parse a newline that maybe preceeded by a comment started with `comment_symbol`.
 pub fn newline_with_comment<'a, S: Clone + 'a>(comment_symbol: &'static str) -> impl Parser<'a, (), S> {
-  either(
-    succeed!(())
-      .skip(space0())
-      .skip(line_comment(comment_symbol)),
-    succeed!(())
-      .skip(space0())
-      .skip(newline_char())
-  )
+  succeed!(())
+    .skip(space0())
+    .skip(either(
+      newline_char(),
+      line_comment(comment_symbol),
+    ))
 }
 
 /// Parse a line comment started with `comment_symbol`.
