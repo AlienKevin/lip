@@ -269,3 +269,20 @@ fn test_newline_with_comment() {
     "I'm expecting a `//` but found `--`."
   );
 }
+
+#[test]
+fn test_optional() {
+    assert_succeed(
+        succeed!(|a| a)
+        .keep(optional("yes", token("abc"))),
+        "",
+        "yes"
+    );
+    assert_succeed(
+        succeed!(|a| a)
+        .skip(token("abc"))
+        .keep(optional("yes", token("hello"))),
+        "abc",
+        "yes"
+    );
+}
