@@ -392,3 +392,84 @@ fn test_optional() {
         "yes",
     );
 }
+
+#[test]
+fn test_one_or_more_until() {
+    assert_succeed(
+        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        "ab",
+        vec!["a"],
+    );
+    assert_succeed(
+        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        "aaab",
+        vec!["a", "a", "a"],
+    );
+    assert_fail(
+        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        "b",
+        "I'm expecting at least one occurrence of the intended string but reached the end delimiter."
+    );
+
+    assert_succeed(
+        succeed!(|list| list).keep(one_or_more_until(
+            succeed!(|line| line)
+                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .skip(token("\n")),
+            token("<end>"),
+        )),
+        "this is the 1st line
+this is the 2nd line
+
+this is the 4th line
+
+<end>",
+        vec![
+            "this is the 1st line".to_string(),
+            "this is the 2nd line".to_string(),
+            "".to_string(),
+            "this is the 4th line".to_string(),
+            "".to_string(),
+        ],
+    );
+
+    assert_succeed(
+        succeed!(|list| list).keep(one_or_more_until(
+            succeed!(|line| line)
+                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .skip(token("\n")),
+            token("<end>"),
+        )),
+        "this is the 1st line
+this is the 2nd line
+
+this is the 4th line
+",
+        vec![
+            "this is the 1st line".to_string(),
+            "this is the 2nd line".to_string(),
+            "".to_string(),
+            "this is the 4th line".to_string(),
+        ],
+    );
+
+    assert_fail(
+        succeed!(|list| list).keep(one_or_more_until(
+            succeed!(|line| line)
+                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .skip(token("\n")),
+            token("<end>"),
+        )),
+        "<end>",
+        "I'm expecting at least one occurrence of the intended string but reached the end delimiter.",
+    );
+}
+
+#[test]
+fn test_chomp_if() {
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "👨‍👩‍👧‍👦", "family emoji"))),
+        "👨‍👩‍👧‍👦",
+        "👨‍👩‍👧‍👦".to_string(),
+    );
+}
