@@ -1069,6 +1069,7 @@ where
     any_char(expecting).pred(predicate, expecting).ignore()
 }
 
+/// Chomp zero or more graphemes if they pass the test.
 pub fn chomp_while0<'a, F: 'a, S: Clone + 'a>(
     predicate: F,
     expecting: &'a str,
@@ -1099,6 +1100,7 @@ where
     zero_or_more(chomp_ifc(predicate, expecting)).ignore()
 }
 
+/// Chomp one or more graphemes if they pass the test.
 pub fn chomp_while1<'a, F: 'a, S: Clone + 'a>(
     predicate: F,
     expecting: &'a str,
