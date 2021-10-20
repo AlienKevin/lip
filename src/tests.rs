@@ -488,3 +488,20 @@ fn test_chomp_if() {
         "ë".to_string(),
     );
 }
+
+#[test]
+fn test_chomp_while1() {
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_while1(|c| c == "我", "character '我'"))),
+        "我我我你",
+        "我我我".to_string(),
+    );
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_while1(
+            |c| c != "👩‍👩‍👦‍👦",
+            "any emoji except the family emoji",
+        ))),
+        "🥲🥰🏉👩‍👩‍👦‍👦👩",
+        "🥲🥰🏉".to_string(),
+    );
+}
