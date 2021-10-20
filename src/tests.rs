@@ -496,6 +496,11 @@ fn test_chomp_while1() {
         "我我我你",
         "我我我".to_string(),
     );
+    assert_fail(
+        succeed!(|s| s).keep(take_chomped(chomp_while1(|c| c == "我", "character `我`"))),
+        "你",
+        "I'm expecting character `我` but found `你`.",
+    );
     assert_succeed(
         succeed!(|s| s).keep(take_chomped(chomp_while1(
             |c| c != "👩‍👩‍👦‍👦",
@@ -503,5 +508,43 @@ fn test_chomp_while1() {
         ))),
         "🥲🥰🏉👩‍👩‍👦‍👦👩",
         "🥲🥰🏉".to_string(),
+    );
+    assert_fail(
+        succeed!(|s| s).keep(take_chomped(chomp_while1(
+            |c| c != "👩‍👩‍👦‍👦",
+            "any emoji except the family emoji",
+        ))),
+        "👩‍👩‍👦‍👦👩",
+        "I'm expecting any emoji except the family emoji but found `👩‍👩‍👦‍👦`.",
+    );
+}
+
+#[test]
+fn test_chomp_while0() {
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_while0(|c| c == "我", "character '我'"))),
+        "我我我你",
+        "我我我".to_string(),
+    );
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_while0(|c| c == "我", "character '我'"))),
+        "你",
+        "".to_string(),
+    );
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_while0(
+            |c| c != "👩‍👩‍👦‍👦",
+            "any emoji except the family emoji",
+        ))),
+        "🥲🥰🏉👩‍👩‍👦‍👦👩",
+        "🥲🥰🏉".to_string(),
+    );
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_while0(
+            |c| c != "👩‍👩‍👦‍👦",
+            "any emoji except the family emoji",
+        ))),
+        "👩‍👩‍👦‍👦👩",
+        "".to_string(),
     );
 }
