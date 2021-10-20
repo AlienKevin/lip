@@ -472,4 +472,19 @@ fn test_chomp_if() {
         "👨‍👩‍👧‍👦",
         "👨‍👩‍👧‍👦".to_string(),
     );
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "혇", "Korean"))),
+        "혇",
+        "혇".to_string(),
+    );
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "齉", "Chinese"))),
+        "齉",
+        "齉".to_string(),
+    );
+    assert_succeed(
+        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "ë", "IPA Symbol"))),
+        "ë",
+        "ë".to_string(),
+    );
 }
