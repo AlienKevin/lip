@@ -487,6 +487,30 @@ fn test_chomp_if() {
         "ë",
         "ë".to_string(),
     );
+    assert_fail(
+        succeed!(|s| s).keep(chomp_if(|c| c == "a", "a letter `a`")),
+        "",
+        "I'm expecting a letter `a` but reached the end of input.",
+    );
+    assert_fail(
+        succeed!(|s| s).keep(chomp_if(|_| true, "any character")),
+        "",
+        "I'm expecting any character but reached the end of input.",
+    );
+}
+
+#[test]
+fn test_chomp_ifc() {
+    assert_fail(
+        succeed!(|s| s).keep(chomp_ifc(|c| *c == 'a', "a letter `a`")),
+        "",
+        "I'm expecting a letter `a` but reached the end of input.",
+    );
+    assert_fail(
+        succeed!(|s| s).keep(chomp_ifc(|_| true, "any character")),
+        "",
+        "I'm expecting any character but reached the end of input.",
+    );
 }
 
 #[test]

@@ -923,7 +923,6 @@ where
                         location: next_location,
                         state: next_state,
                         bound: next_bound,
-                        ..
                     } => {
                         input = next_input;
                         location = next_location;
