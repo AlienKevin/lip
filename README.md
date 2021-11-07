@@ -5,9 +5,9 @@ Lip provides powerful parser combinators for creating reusable and flexible pars
 
 # Why Lip?
 * Easy to understand - uses intuitive combinators like keep and skip
-* Compact - takes less than an hour to learn this library fully, zero dependencies
+* Compact - takes less than an hour to learn this library fully
 * Flexible and composable parser combinators
-* Efficient - no backtracking by default
+* Efficient - minimal backtracking
 * Built-in support for precise, located error messages
 * Keep track of extra states like line number and instruction index
 * Extensible - create your own combinators if needed
