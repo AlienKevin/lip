@@ -859,6 +859,21 @@ where
         let mut output = Vec::new();
         let mut end_bound = false;
 
+        // end_parser must run first
+        // because the language of parser may be a superset of end_parser
+        match end_parser.parse(input, location, ()) {
+            ParseResult::Ok { .. } => {
+                return ParseResult::Ok {
+                    input,
+                    output,
+                    location,
+                    state,
+                    bound: end_bound,
+                }
+            }
+            ParseResult::Err { .. } => {} // no bit deal, continue parsing
+        }
+
         match parser.parse(input, location, state.clone()) {
             ParseResult::Ok {
                 input: next_input,
@@ -879,37 +894,28 @@ where
                 to,
                 state,
                 bound,
-            } => match end_parser.parse(input, location, ()) {
-                ParseResult::Ok { .. } => {
+            } => {
+                // end_parser must have failed as well
+                // because we only run parser if end_parser fails at first
+                if input == "" {
+                    // reached the end of input
                     return ParseResult::Ok {
                         input,
                         output,
                         location,
                         state,
                         bound: end_bound,
-                    }
+                    };
+                } else {
+                    return ParseResult::Err {
+                        message,
+                        from,
+                        to,
+                        state,
+                        bound,
+                    };
                 }
-                ParseResult::Err { .. } => {
-                    if input == "" {
-                        // reached the end of input
-                        return ParseResult::Ok {
-                            input,
-                            output,
-                            location,
-                            state,
-                            bound: end_bound,
-                        };
-                    } else {
-                        return ParseResult::Err {
-                            message,
-                            from,
-                            to,
-                            state,
-                            bound,
-                        };
-                    }
-                }
-            },
+            }
         }
 
         loop {

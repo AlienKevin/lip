@@ -560,6 +560,18 @@ this is the 4th line
         "<end>",
         vec![],
     );
+
+    // edge case: the language of parser may be a superset of end_parser
+    assert_succeed(
+        succeed!(|list| list).keep(zero_or_more_until(
+            succeed!(|line| line)
+                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .skip(token("\n")),
+            token("<end>"),
+        )),
+        "<end>\n",
+        vec![],
+    );
 }
 
 #[test]
