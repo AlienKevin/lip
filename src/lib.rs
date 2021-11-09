@@ -846,7 +846,129 @@ where
     }
 }
 
-/// Run the parser one or more times until an end delimiter and combine each output into a vector of outputs.
+/// Run the parser zero or more times until an end delimiter (or end of input) and combine each output into a vector of outputs.
+pub fn zero_or_more_until<'a, P, A, S: Clone + 'a, E, B>(
+    parser: P,
+    end_parser: E,
+) -> impl Parser<'a, Vec<A>, S>
+where
+    P: Parser<'a, A, S>,
+    E: Parser<'a, B, ()>,
+{
+    move |mut input, mut location, mut state: S| {
+        let mut output = Vec::new();
+        let mut end_bound = false;
+
+        match parser.parse(input, location, state.clone()) {
+            ParseResult::Ok {
+                input: next_input,
+                output: first_item,
+                location: next_location,
+                state: next_state,
+                bound: next_bound,
+            } => {
+                input = next_input;
+                location = next_location;
+                state = next_state;
+                end_bound = next_bound;
+                output.push(first_item);
+            }
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                bound,
+            } => match end_parser.parse(input, location, ()) {
+                ParseResult::Ok { .. } => {
+                    return ParseResult::Ok {
+                        input,
+                        output,
+                        location,
+                        state,
+                        bound: end_bound,
+                    }
+                }
+                ParseResult::Err { .. } => {
+                    if input == "" {
+                        // reached the end of input
+                        return ParseResult::Ok {
+                            input,
+                            output,
+                            location,
+                            state,
+                            bound: end_bound,
+                        };
+                    } else {
+                        return ParseResult::Err {
+                            message,
+                            from,
+                            to,
+                            state,
+                            bound,
+                        };
+                    }
+                }
+            },
+        }
+
+        loop {
+            match end_parser.parse(input, location, ()) {
+                ParseResult::Ok { .. } => {
+                    return ParseResult::Ok {
+                        input,
+                        output,
+                        location,
+                        state,
+                        bound: end_bound,
+                    }
+                }
+                ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
+                    ParseResult::Ok {
+                        input: next_input,
+                        output: next_item,
+                        location: next_location,
+                        state: next_state,
+                        bound: next_bound,
+                    } => {
+                        input = next_input;
+                        location = next_location;
+                        state = next_state;
+                        end_bound = next_bound;
+                        output.push(next_item);
+                    }
+                    ParseResult::Err {
+                        from: end_from,
+                        to: end_to,
+                        ..
+                    } => {
+                        if input == "" {
+                            // reached the end of input
+                            return ParseResult::Ok {
+                                input,
+                                output,
+                                location,
+                                state,
+                                bound: end_bound,
+                            };
+                        } else {
+                            return ParseResult::Err {
+                                message: "I'm expecting either the intended string or the end delimiter. However, neither was found."
+                                    .to_string(),
+                                from: end_from,
+                                to: end_to,
+                                state,
+                                bound: end_bound,
+                            };
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+/// Run the parser one or more times until an end delimiter (or end of input) and combine each output into a vector of outputs.
 pub fn one_or_more_until<'a, P, A, S: Clone + 'a, E, B>(
     parser: P,
     end_parser: E,
@@ -930,17 +1052,33 @@ where
                         end_bound = next_bound;
                         output.push(next_item);
                     }
-                    ParseResult::Err { .. } => break,
+                    ParseResult::Err {
+                        from: end_from,
+                        to: end_to,
+                        ..
+                    } => {
+                        if input == "" {
+                            // reached the end of input
+                            return ParseResult::Ok {
+                                input,
+                                output,
+                                location,
+                                state,
+                                bound: end_bound,
+                            };
+                        } else {
+                            return ParseResult::Err {
+                                message: "I'm expecting either the intended string or the end delimiter. However, neither was found."
+                                    .to_string(),
+                                from: end_from,
+                                to: end_to,
+                                state,
+                                bound: end_bound,
+                            };
+                        }
+                    }
                 },
             }
-        }
-
-        ParseResult::Ok {
-            input,
-            output,
-            location,
-            state,
-            bound: end_bound,
         }
     }
 }
