@@ -9,6 +9,16 @@ use std::fmt::Debug;
 #[test]
 fn test_one_of() {
     assert_succeed(one_of!(token("a"), token("b"), token("c")), "c", "c");
+    assert_succeed(
+        one_of!(
+            succeed!(|_a: &str, _b: &str| "a")
+                .keep(optional("_", token("a")))
+                .keep(token("x")),
+            token("b")
+        ),
+        "b",
+        "b",
+    );
     assert_fail(
         one_of!(token("a"), token("b"), token("c")),
         "",
@@ -391,6 +401,27 @@ fn test_optional() {
         "abc",
         "yes",
     );
+    assert_succeed(
+        succeed!(|a| a)
+            .skip(token("abc"))
+            .keep(optional("yes", token("hello"))),
+        "abc",
+        "yes",
+    );
+    assert_fail(
+        succeed!(|is_negative: bool, n: f64| if is_negative { -n } else { n })
+            .keep(optional(false, token("-").map(|_| true)))
+            .keep(float()),
+        "null",
+        "I'm expecting a floating point number but found `n`.",
+    );
+    assert_succeed(
+        succeed!(|is_negative: bool, n: f64| if is_negative { -n } else { n })
+            .keep(optional(false, token("-").map(|_| true)))
+            .keep(float()),
+        "-3.2e2",
+        -3.2e2,
+    );
 }
 
 #[test]
@@ -679,5 +710,19 @@ fn test_chomp_while0() {
         ))),
         "👩‍👩‍👦‍👦👩",
         "".to_string(),
+    );
+}
+
+#[test]
+fn test_digits() {
+    assert_succeed(
+        digits("a nonnegative int without leading zeroes", false),
+        "1028923",
+        "1028923".to_string(),
+    );
+    assert_fail(
+        digits("a nonnegative int without leading zeroes", false),
+        "a",
+        "I'm expecting a nonnegative int without leading zeroes but found `a`.",
     );
 }
