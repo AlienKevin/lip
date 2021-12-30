@@ -248,7 +248,7 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
             ParseResult::Ok { output, .. } => output,
             ParseResult::Err {
                 message, from, to, ..
-            } => panic!(display_error(source, message, from, to)),
+            } => panic!("{}", display_error(source, message, from, to)),
         }
     }
     fn unwrap_err(self) -> String
@@ -256,7 +256,7 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
         T: Debug + 'a,
     {
         match self {
-            ParseResult::Ok { output, .. } => panic!(format!("{:#?}", output)),
+            ParseResult::Ok { output, .. } => panic!("{:#?}", output),
             ParseResult::Err { message, .. } => message,
         }
     }
