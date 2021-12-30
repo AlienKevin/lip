@@ -1,11 +1,6 @@
-use super::Location;
-use super::ParseResult;
-use super::Parser;
-use super::Trailing;
 #[cfg(test)]
 use super::*;
 use std::convert::identity;
-use std::fmt::Debug;
 
 #[test]
 fn test_one_of() {
