@@ -47,7 +47,7 @@ fn test_update() {
                 state: Counter {
                     count: state.count + 1
                 },
-                bound: true,
+                committed: true,
             })
             .parse("a", Location { row: 1, col: 1 }, Counter { count: 0 }),
         ParseResult::Ok {
@@ -55,7 +55,7 @@ fn test_update() {
             location: Location { row: 1, col: 2 },
             output: "ab".to_string(),
             state: Counter { count: 1 },
-            bound: true,
+            committed: true,
         }
     );
     let counted_parser = token("a").update(|input, output, location, state: Counter| {
@@ -68,7 +68,7 @@ fn test_update() {
                 },
                 to: location,
                 state,
-                bound: false,
+                committed: false,
             }
         } else {
             ParseResult::Ok {
@@ -78,7 +78,7 @@ fn test_update() {
                 state: Counter {
                     count: state.count + 1,
                 },
-                bound: true,
+                committed: true,
             }
         }
     });
@@ -89,7 +89,7 @@ fn test_update() {
             location: Location { row: 1, col: 2 },
             output: "aa".to_string(),
             state: Counter { count: 1 },
-            bound: true,
+            committed: true,
         }
     );
     assert_eq!(
@@ -99,7 +99,7 @@ fn test_update() {
             from: Location { row: 1, col: 1 },
             to: Location { row: 1, col: 2 },
             state: Counter { count: 11 },
-            bound: false,
+            committed: false,
         }
     );
 }

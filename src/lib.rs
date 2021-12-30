@@ -42,6 +42,9 @@ pub struct Location {
 /// * location: the [Location](struct.Location.html) of the end of parse,
 /// * output: the output of the parsing
 /// * state: the final state of the parser
+/// * committed: If committed is true, then the parser has succeeded and
+/// has committed to this parse. If a parser after this fails,
+/// other parser alternatives will not be attempted
 ///
 /// `ParseResult::Err` contains:
 /// * message: the message explaining what and why the parse failed
@@ -74,14 +77,14 @@ pub enum ParseResult<'a, Output, State> {
         location: Location,
         output: Output,
         state: State,
-        bound: bool,
+        committed: bool,
     },
     Err {
         message: String,
         from: Location,
         to: Location,
         state: State,
-        bound: bool,
+        committed: bool,
     },
 }
 
@@ -95,26 +98,26 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
                 location,
                 output,
                 state,
-                bound,
+                committed,
             } => ParseResult::Ok {
                 input,
                 location,
                 output: func(output),
                 state,
-                bound,
+                committed,
             },
             ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             },
         }
     }
@@ -129,26 +132,26 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
                 location,
                 output,
                 state,
-                bound,
+                committed,
             } => ParseResult::Ok {
                 input,
                 location,
                 output: func(output, state.clone()),
                 state,
-                bound,
+                committed,
             },
             ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             },
         }
     }
@@ -161,26 +164,26 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
                 location,
                 output,
                 state,
-                bound,
+                committed,
             } => ParseResult::Ok {
                 input,
                 location,
                 output,
                 state,
-                bound,
+                committed,
             },
             ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => ParseResult::Err {
                 message: func(message),
                 from,
                 to,
                 state,
-                bound,
+                committed,
             },
         }
     }
@@ -196,33 +199,33 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
                 output,
                 location,
                 state,
-                bound,
+                committed,
             } => match func(input, output, location, state) {
                 ParseResult::Ok {
                     input,
                     output,
                     location,
                     state,
-                    bound: next_bound,
+                    committed: next_bound,
                 } => ParseResult::Ok {
                     input,
                     output,
                     location,
                     state,
-                    bound: bound || next_bound,
+                    committed: committed || next_bound,
                 },
                 ParseResult::Err {
                     message,
                     from,
                     to,
                     state,
-                    bound: next_bound,
+                    committed: next_bound,
                 } => ParseResult::Err {
                     message,
                     from,
                     to,
                     state,
-                    bound: bound || next_bound,
+                    committed: committed || next_bound,
                 },
             },
             ParseResult::Err {
@@ -230,13 +233,13 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             },
         }
     }
@@ -561,7 +564,7 @@ pub fn token<'a, S: Clone + 'a>(expected: &'static str) -> BoxedParser<'a, &str,
                 output: expected,
                 location: increment_col(expected.len(), location),
                 state,
-                bound: true,
+                committed: true,
             },
             _ => ParseResult::Err {
                 message: format!(
@@ -578,7 +581,7 @@ pub fn token<'a, S: Clone + 'a>(expected: &'static str) -> BoxedParser<'a, &str,
                     None => location,
                 },
                 state,
-                bound: false,
+                committed: false,
             },
         }
     })
@@ -650,26 +653,26 @@ where
                 output,
                 location,
                 state,
-                bound,
+                committed,
             } => ParseResult::Ok {
                 input,
                 output: map_fn(output, state.clone()),
                 location,
                 state,
-                bound,
+                committed,
             },
             ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => ParseResult::Err {
                 message,
                 from,
                 to,
                 state,
-                bound,
+                committed,
             },
         }
     })
@@ -718,7 +721,7 @@ pub fn succeed_helper<'a, A: Clone + 'a, S: Clone + 'a>(output: A) -> BoxedParse
         location,
         state,
         output: output.clone(),
-        bound: false,
+        committed: false,
     })
 }
 
@@ -760,7 +763,7 @@ where
         from: from(location),
         to: to(location),
         state,
-        bound: false,
+        committed: false,
     })
 }
 
@@ -791,7 +794,7 @@ where
                 output: first_item,
                 location: next_location,
                 state: next_state,
-                bound: next_bound,
+                committed: next_bound,
             } => {
                 input = next_input;
                 location = next_location;
@@ -804,14 +807,14 @@ where
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => {
                 return ParseResult::Err {
                     message,
                     from,
                     to,
                     state,
-                    bound,
+                    committed,
                 };
             }
         }
@@ -823,7 +826,7 @@ where
                     output: next_item,
                     location: next_location,
                     state: next_state,
-                    bound: next_bound,
+                    committed: next_bound,
                     ..
                 } => {
                     input = next_input;
@@ -841,7 +844,7 @@ where
             output,
             location,
             state,
-            bound: end_bound,
+            committed: end_bound,
         }
     }
 }
@@ -868,7 +871,7 @@ where
                     output,
                     location,
                     state,
-                    bound: end_bound,
+                    committed: end_bound,
                 }
             }
             ParseResult::Err { .. } => {} // no bit deal, continue parsing
@@ -880,7 +883,7 @@ where
                 output: first_item,
                 location: next_location,
                 state: next_state,
-                bound: next_bound,
+                committed: next_bound,
             } => {
                 input = next_input;
                 location = next_location;
@@ -893,7 +896,7 @@ where
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => {
                 // end_parser must have failed as well
                 // because we only run parser if end_parser fails at first
@@ -904,7 +907,7 @@ where
                         output,
                         location,
                         state,
-                        bound: end_bound,
+                        committed: end_bound,
                     };
                 } else {
                     return ParseResult::Err {
@@ -912,7 +915,7 @@ where
                         from,
                         to,
                         state,
-                        bound,
+                        committed,
                     };
                 }
             }
@@ -926,7 +929,7 @@ where
                         output,
                         location,
                         state,
-                        bound: end_bound,
+                        committed: end_bound,
                     }
                 }
                 ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
@@ -935,7 +938,7 @@ where
                         output: next_item,
                         location: next_location,
                         state: next_state,
-                        bound: next_bound,
+                        committed: next_bound,
                     } => {
                         input = next_input;
                         location = next_location;
@@ -955,7 +958,7 @@ where
                                 output,
                                 location,
                                 state,
-                                bound: end_bound,
+                                committed: end_bound,
                             };
                         } else {
                             return ParseResult::Err {
@@ -964,7 +967,7 @@ where
                                 from: end_from,
                                 to: end_to,
                                 state,
-                                bound: end_bound,
+                                committed: end_bound,
                             };
                         }
                     }
@@ -998,7 +1001,7 @@ where
                     from: location,
                     to: end_location,
                     state,
-                    bound: end_bound,
+                    committed: end_bound,
                 }
             }
             ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
@@ -1007,7 +1010,7 @@ where
                     output: first_item,
                     location: next_location,
                     state: next_state,
-                    bound: next_bound,
+                    committed: next_bound,
                 } => {
                     input = next_input;
                     location = next_location;
@@ -1020,14 +1023,14 @@ where
                     from,
                     to,
                     state,
-                    bound,
+                    committed,
                 } => {
                     return ParseResult::Err {
                         message,
                         from,
                         to,
                         state,
-                        bound,
+                        committed,
                     };
                 }
             },
@@ -1041,7 +1044,7 @@ where
                         output,
                         location,
                         state,
-                        bound: end_bound,
+                        committed: end_bound,
                     }
                 }
                 ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
@@ -1050,7 +1053,7 @@ where
                         output: next_item,
                         location: next_location,
                         state: next_state,
-                        bound: next_bound,
+                        committed: next_bound,
                     } => {
                         input = next_input;
                         location = next_location;
@@ -1070,7 +1073,7 @@ where
                                 output,
                                 location,
                                 state,
-                                bound: end_bound,
+                                committed: end_bound,
                             };
                         } else {
                             return ParseResult::Err {
@@ -1079,7 +1082,7 @@ where
                                 from: end_from,
                                 to: end_to,
                                 state,
-                                bound: end_bound,
+                                committed: end_bound,
                             };
                         }
                     }
@@ -1100,7 +1103,7 @@ where
                 from: location,
                 to: location,
                 state,
-                bound: false,
+                committed: false,
             }
         } else {
             ParseResult::Ok {
@@ -1108,7 +1111,7 @@ where
                 output,
                 location,
                 state,
-                bound: false,
+                committed: false,
             }
         }
     })
@@ -1121,20 +1124,20 @@ where
 {
     BoxedParser::new(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
-        let mut bound = false;
+        let mut committed = false;
 
         while let ParseResult::Ok {
             input: next_input,
             output: next_item,
             location: next_location,
             state: next_state,
-            bound: next_bound,
+            committed: next_bound,
         } = parser.parse(input, location, state.clone())
         {
             input = next_input;
             location = next_location;
             state = next_state;
-            bound = next_bound;
+            committed = next_bound;
             output.push(next_item);
         }
 
@@ -1143,7 +1146,7 @@ where
             output,
             location,
             state,
-            bound,
+            committed,
         }
     })
 }
@@ -1156,14 +1159,14 @@ fn any_grapheme<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, &'a st
             output: c,
             location: increment_col(c.len(), location),
             state,
-            bound: false,
+            committed: false,
         },
         _ => ParseResult::Err {
             message: format!("I'm expecting {} but reached the end of input.", expecting),
             from: location,
             to: location,
             state,
-            bound: false,
+            committed: false,
         },
     }
 }
@@ -1176,14 +1179,14 @@ fn any_char<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, char, S> {
             output: c,
             location: increment_col(c.len_utf8(), location),
             state,
-            bound: false,
+            committed: false,
         },
         _ => ParseResult::Err {
             message: format!("I'm expecting {} but reached the end of input.", expecting),
             from: location,
             to: location,
             state,
-            bound: false,
+            committed: false,
         },
     }
 }
@@ -1306,20 +1309,20 @@ where
             output: get_difference(input, next_input).to_string(),
             location: next_location,
             state: next_state,
-            bound: true,
+            committed: true,
         },
         ParseResult::Err {
             message,
             from,
             to,
             state,
-            bound,
+            committed,
         } => ParseResult::Err {
             message,
             from,
             to,
             state,
-            bound,
+            committed,
         },
     }
 }
@@ -1343,7 +1346,7 @@ where
             output: content,
             location: next_location,
             state: next_state,
-            bound: next_bound,
+            committed: next_bound,
         } => {
             if predicate(&content) {
                 ParseResult::Ok {
@@ -1351,7 +1354,7 @@ where
                     output: content,
                     location: next_location,
                     state: next_state,
-                    bound: true,
+                    committed: true,
                 }
             } else {
                 ParseResult::Err {
@@ -1364,7 +1367,7 @@ where
                     from: location,
                     to: next_location,
                     state: next_state,
-                    bound: next_bound,
+                    committed: next_bound,
                 }
             }
         }
@@ -1412,12 +1415,12 @@ fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
                     output,
                     location,
                     state,
-                    bound,
+                    committed,
                 } => ParseResult::Ok {
                     input,
                     output,
                     state,
-                    bound,
+                    committed,
                     location: increment_row(1, location),
                 },
                 err @ ParseResult::Err { .. } => err,
@@ -1498,7 +1501,7 @@ where
 {
     move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
-        let mut bound = false;
+        let mut committed = false;
 
         if times == 0 {
             return ParseResult::Ok {
@@ -1506,7 +1509,7 @@ where
                 location,
                 output,
                 state,
-                bound,
+                committed,
             };
         }
 
@@ -1517,7 +1520,7 @@ where
             output: next_item,
             location: next_location,
             state: next_state,
-            bound: next_bound,
+            committed: next_bound,
         } = parser.parse(input, location, state.clone())
         {
             if counter >= times {
@@ -1528,7 +1531,7 @@ where
             state = next_state;
             output.push(next_item);
             counter = counter + 1;
-            bound = next_bound;
+            committed = next_bound;
         }
 
         ParseResult::Ok {
@@ -1536,7 +1539,7 @@ where
             output,
             location,
             state,
-            bound,
+            committed,
         }
     }
 }
@@ -1569,15 +1572,15 @@ where
                 from,
                 to,
                 state,
-                bound,
+                committed,
             } => {
-                if bound {
+                if committed {
                     ParseResult::Err {
                         message,
                         from,
                         to,
                         state,
-                        bound,
+                        committed,
                     }
                 } else {
                     parser2.parse(input, location, state)
@@ -1603,7 +1606,7 @@ where
             location,
             output: default.clone(),
             state,
-            bound: false,
+            committed: false,
         }),
     )
 }
@@ -1620,7 +1623,7 @@ where
             location,
             output: None,
             state,
-            bound: false,
+            committed: false,
         }),
     )
 }
@@ -1723,7 +1726,7 @@ fn digits<'a, S: Clone + 'a>(
                     },
                     to: location,
                     state,
-                    bound: false,
+                    committed: false,
                 }
             } else {
                 ParseResult::Ok {
@@ -1731,7 +1734,7 @@ fn digits<'a, S: Clone + 'a>(
                     output: digits,
                     location,
                     state,
-                    bound: true,
+                    committed: true,
                 }
             }
         },
@@ -1796,7 +1799,7 @@ where
                 },
                 to: location,
                 state,
-                bound: false,
+                committed: false,
             }
         } else {
             if name
@@ -1815,7 +1818,7 @@ where
                     },
                     to: location,
                     state,
-                    bound: false,
+                    committed: false,
                 }
             } else if separator(&name.chars().last().unwrap()) {
                 ParseResult::Err {
@@ -1831,7 +1834,7 @@ where
                     },
                     to: location,
                     state,
-                    bound: false,
+                    committed: false,
                 }
             } else {
                 ParseResult::Ok {
@@ -1839,7 +1842,7 @@ where
                     location,
                     output: name.clone(),
                     state,
-                    bound: true,
+                    committed: true,
                 }
             }
         }
@@ -1969,20 +1972,20 @@ where
             },
             location: next_location,
             state: next_state,
-            bound: true,
+            committed: true,
         },
         ParseResult::Err {
             message,
             from,
             to,
             state,
-            bound,
+            committed,
         } => ParseResult::Err {
             message,
             from,
             to,
             state,
-            bound,
+            committed,
         },
     }
 }
@@ -2019,13 +2022,13 @@ where
             location: next_location,
             state: next_state,
             output,
-            bound,
+            committed,
         } => ParseResult::Ok {
             input: next_input,
             output: output.clone(),
             location: next_location,
             state: f(output, next_state),
-            bound,
+            committed,
         },
         err @ ParseResult::Err { .. } => err,
     }
@@ -2049,13 +2052,13 @@ where
             from,
             to,
             state,
-            bound,
+            committed,
         } => ParseResult::Err {
             message,
             from,
             to,
             state,
-            bound,
+            committed,
         },
     }
 }
