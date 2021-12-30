@@ -442,33 +442,33 @@ fn test_optional_with_default() {
 #[test]
 fn test_one_or_more_until() {
     assert_succeed(
-        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
         "ab",
         vec!["a"],
     );
     assert_succeed(
-        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
         "aaab",
         vec!["a", "a", "a"],
     );
     assert_fail(
-        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
         "b",
         "I'm expecting at least one occurrence of the intended string but reached the end delimiter."
     );
     assert_fail(
-        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
         "aaac",
         "I'm expecting either the intended string or the end delimiter. However, neither was found.",
     );
     assert_succeed(
-        succeed!(|list| list).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
         "aaa",
         vec!["a", "a", "a"],
     );
 
     assert_succeed(
-        succeed!(|list| list).keep(one_or_more_until(
+        succeed!(identity).keep(one_or_more_until(
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
@@ -490,7 +490,7 @@ this is the 4th line
     );
 
     assert_succeed(
-        succeed!(|list| list).keep(one_or_more_until(
+        succeed!(identity).keep(one_or_more_until(
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
@@ -510,7 +510,7 @@ this is the 4th line
     );
 
     assert_fail(
-        succeed!(|list| list).keep(one_or_more_until(
+        succeed!(identity).keep(one_or_more_until(
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
@@ -524,38 +524,38 @@ this is the 4th line
 #[test]
 fn test_zero_or_more_until() {
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(zero_or_more_until(token("a"), token("b"))),
         "ab",
         vec!["a"],
     );
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(zero_or_more_until(token("a"), token("b"))),
         "aaab",
         vec!["a", "a", "a"],
     );
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(zero_or_more_until(token("a"), token("b"))),
         "b",
         vec![],
     );
     assert_fail(
-        succeed!(|list| list).keep(zero_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(zero_or_more_until(token("a"), token("b"))),
         "aaac",
         "I'm expecting either the intended string or the end delimiter. However, neither was found.",
     );
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(zero_or_more_until(token("a"), token("b"))),
         "aaa",
         vec!["a", "a", "a"],
     );
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(zero_or_more_until(token("a"), token("b"))),
         "",
         vec![],
     );
 
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(
+        succeed!(identity).keep(zero_or_more_until(
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
@@ -577,7 +577,7 @@ this is the 4th line
     );
 
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(
+        succeed!(identity).keep(zero_or_more_until(
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
@@ -597,7 +597,7 @@ this is the 4th line
     );
 
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(
+        succeed!(identity).keep(zero_or_more_until(
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
@@ -609,7 +609,7 @@ this is the 4th line
 
     // edge case: the language of parser may be a superset of end_parser
     assert_succeed(
-        succeed!(|list| list).keep(zero_or_more_until(
+        succeed!(identity).keep(zero_or_more_until(
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
@@ -623,32 +623,32 @@ this is the 4th line
 #[test]
 fn test_chomp_if() {
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "👨‍👩‍👧‍👦", "family emoji"))),
+        succeed!(identity).keep(take_chomped(chomp_if(|c| c == "👨‍👩‍👧‍👦", "family emoji"))),
         "👨‍👩‍👧‍👦",
         "👨‍👩‍👧‍👦".to_string(),
     );
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "혇", "Korean"))),
+        succeed!(identity).keep(take_chomped(chomp_if(|c| c == "혇", "Korean"))),
         "혇",
         "혇".to_string(),
     );
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "齉", "Chinese"))),
+        succeed!(identity).keep(take_chomped(chomp_if(|c| c == "齉", "Chinese"))),
         "齉",
         "齉".to_string(),
     );
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_if(|c| c == "ë", "IPA Symbol"))),
+        succeed!(identity).keep(take_chomped(chomp_if(|c| c == "ë", "IPA Symbol"))),
         "ë",
         "ë".to_string(),
     );
     assert_fail(
-        succeed!(|s| s).keep(chomp_if(|c| c == "a", "a letter `a`")),
+        succeed!(identity).keep(chomp_if(|c| c == "a", "a letter `a`")),
         "",
         "I'm expecting a letter `a` but reached the end of input.",
     );
     assert_fail(
-        succeed!(|s| s).keep(chomp_if(|_| true, "any character")),
+        succeed!(identity).keep(chomp_if(|_| true, "any character")),
         "",
         "I'm expecting any character but reached the end of input.",
     );
@@ -657,12 +657,12 @@ fn test_chomp_if() {
 #[test]
 fn test_chomp_ifc() {
     assert_fail(
-        succeed!(|s| s).keep(chomp_ifc(|c| *c == 'a', "a letter `a`")),
+        succeed!(identity).keep(chomp_ifc(|c| *c == 'a', "a letter `a`")),
         "",
         "I'm expecting a letter `a` but reached the end of input.",
     );
     assert_fail(
-        succeed!(|s| s).keep(chomp_ifc(|_| true, "any character")),
+        succeed!(identity).keep(chomp_ifc(|_| true, "any character")),
         "",
         "I'm expecting any character but reached the end of input.",
     );
@@ -671,17 +671,17 @@ fn test_chomp_ifc() {
 #[test]
 fn test_chomp_while1() {
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_while1(|c| c == "我", "character '我'"))),
+        succeed!(identity).keep(take_chomped(chomp_while1(|c| c == "我", "character '我'"))),
         "我我我你",
         "我我我".to_string(),
     );
     assert_fail(
-        succeed!(|s| s).keep(take_chomped(chomp_while1(|c| c == "我", "character `我`"))),
+        succeed!(identity).keep(take_chomped(chomp_while1(|c| c == "我", "character `我`"))),
         "你",
         "I'm expecting character `我` but found `你`.",
     );
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_while1(
+        succeed!(identity).keep(take_chomped(chomp_while1(
             |c| c != "👩‍👩‍👦‍👦",
             "any emoji except the family emoji",
         ))),
@@ -689,7 +689,7 @@ fn test_chomp_while1() {
         "🥲🥰🏉".to_string(),
     );
     assert_fail(
-        succeed!(|s| s).keep(take_chomped(chomp_while1(
+        succeed!(identity).keep(take_chomped(chomp_while1(
             |c| c != "👩‍👩‍👦‍👦",
             "any emoji except the family emoji",
         ))),
@@ -701,17 +701,17 @@ fn test_chomp_while1() {
 #[test]
 fn test_chomp_while0() {
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_while0(|c| c == "我", "character '我'"))),
+        succeed!(identity).keep(take_chomped(chomp_while0(|c| c == "我", "character '我'"))),
         "我我我你",
         "我我我".to_string(),
     );
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_while0(|c| c == "我", "character '我'"))),
+        succeed!(identity).keep(take_chomped(chomp_while0(|c| c == "我", "character '我'"))),
         "你",
         "".to_string(),
     );
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_while0(
+        succeed!(identity).keep(take_chomped(chomp_while0(
             |c| c != "👩‍👩‍👦‍👦",
             "any emoji except the family emoji",
         ))),
@@ -719,7 +719,7 @@ fn test_chomp_while0() {
         "🥲🥰🏉".to_string(),
     );
     assert_succeed(
-        succeed!(|s| s).keep(take_chomped(chomp_while0(
+        succeed!(identity).keep(take_chomped(chomp_while0(
             |c| c != "👩‍👩‍👦‍👦",
             "any emoji except the family emoji",
         ))),
