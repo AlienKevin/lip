@@ -4,6 +4,7 @@ use super::Parser;
 use super::Trailing;
 #[cfg(test)]
 use super::*;
+use std::convert::identity;
 use std::fmt::Debug;
 
 #[test]
@@ -11,8 +12,8 @@ fn test_one_of() {
     assert_succeed(one_of!(token("a"), token("b"), token("c")), "c", "c");
     assert_succeed(
         one_of!(
-            succeed!(|_a: &str, _b: &str| "a")
-                .keep(optional("_", token("a")))
+            succeed!(|_a, _b| "a")
+                .keep(optional(token("a")))
                 .keep(token("x")),
             token("b")
         ),
@@ -389,35 +390,54 @@ fn test_newline_with_comment() {
 
 #[test]
 fn test_optional() {
+    assert_succeed(succeed!(identity).keep(optional(token("abc"))), "", None);
     assert_succeed(
-        succeed!(|a| a).keep(optional("yes", token("abc"))),
-        "",
-        "yes",
-    );
-    assert_succeed(
-        succeed!(|a| a)
+        succeed!(identity)
             .skip(token("abc"))
-            .keep(optional("yes", token("hello"))),
+            .keep(optional(token("hello"))),
         "abc",
-        "yes",
-    );
-    assert_succeed(
-        succeed!(|a| a)
-            .skip(token("abc"))
-            .keep(optional("yes", token("hello"))),
-        "abc",
-        "yes",
+        None,
     );
     assert_fail(
-        succeed!(|is_negative: bool, n: f64| if is_negative { -n } else { n })
-            .keep(optional(false, token("-").map(|_| true)))
+        succeed!(|sign: Option<_>, n: f64| if let Some(_) = sign { -n } else { n })
+            .keep(optional(token("-")))
             .keep(float()),
         "null",
         "I'm expecting a floating point number but found `n`.",
     );
     assert_succeed(
-        succeed!(|is_negative: bool, n: f64| if is_negative { -n } else { n })
-            .keep(optional(false, token("-").map(|_| true)))
+        succeed!(|sign: Option<_>, n: f64| if let Some(_) = sign { -n } else { n })
+            .keep(optional(token("-")))
+            .keep(float()),
+        "-3.2e2",
+        -3.2e2,
+    );
+}
+
+#[test]
+fn test_optional_with_default() {
+    assert_succeed(
+        succeed!(identity).keep(optional_with_default("default", token("abc"))),
+        "",
+        "default",
+    );
+    assert_succeed(
+        succeed!(identity)
+            .skip(token("abc"))
+            .keep(optional_with_default("default", token("hello"))),
+        "abc",
+        "default",
+    );
+    assert_fail(
+        succeed!(|sign: bool, n: f64| if sign { -n } else { n })
+            .keep(optional_with_default(false, token("-").map(|_| true)))
+            .keep(float()),
+        "null",
+        "I'm expecting a floating point number but found `n`.",
+    );
+    assert_succeed(
+        succeed!(|sign: bool, n: f64| if sign { -n } else { n })
+            .keep(optional_with_default(false, token("-").map(|_| true)))
             .keep(float()),
         "-3.2e2",
         -3.2e2,

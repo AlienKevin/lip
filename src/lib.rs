@@ -1589,7 +1589,7 @@ where
 }
 
 /// Optionally parse something. Returns supplied default value if parse failed.
-pub fn optional<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(
+pub fn optional_with_default<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(
     default: A,
     parser: P,
 ) -> BoxedParser<'a, A, S>
@@ -1602,6 +1602,23 @@ where
             input,
             location,
             output: default.clone(),
+            state,
+            bound: false,
+        }),
+    )
+}
+
+/// Optionally parse something.
+pub fn optional<'a, A: 'a, P: 'a, S: Clone + 'a>(parser: P) -> BoxedParser<'a, Option<A>, S>
+where
+    P: Parser<'a, A, S>,
+{
+    either(
+        BoxedParser::new(parser).map(Some),
+        BoxedParser::new(move |input, location, state| ParseResult::Ok {
+            input,
+            location,
+            output: None,
             state,
             bound: false,
         }),
@@ -1669,21 +1686,25 @@ pub fn int<'a, S: Clone + 'a>() -> impl Parser<'a, usize, S> {
 pub fn float<'a, S: Clone + 'a>() -> impl Parser<'a, f64, S> {
     let expecting = "a floating point number";
     succeed!(
-        |whole: String, fraction: String, exponent: String| (whole + &fraction + &exponent)
+        |whole: String, fraction: Option<String>, exponent: Option<String>| (whole
+            + &fraction.unwrap_or_default()
+            + &exponent.unwrap_or_default())
             .parse()
             .unwrap()
     )
     .keep(digits(expecting, false))
     .keep(optional(
-        "".to_string(),
         right(token("."), digits(expecting, true)).map(|digits| ".".to_owned() + &digits),
     ))
     .keep(optional(
-        "".to_string(),
-        succeed!(|sign: &'static str, exponent: String| "e".to_string() + sign + &exponent)
-            .skip(either(token("e"), token("E")))
-            .keep(optional("", either(token("+"), token("-"))))
-            .keep(digits(expecting, false)),
+        succeed!(
+            |sign: Option<&'static str>, exponent: String| "e".to_string()
+                + sign.unwrap_or_default()
+                + &exponent
+        )
+        .skip(either(token("e"), token("E")))
+        .keep(optional(either(token("+"), token("-"))))
+        .keep(digits(expecting, false)),
     ))
 }
 
@@ -1874,7 +1895,7 @@ pub fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
 ) -> BoxedParser<'a, Vec<A>, S> {
     wrap(
         pair(token(start), spaces.clone()),
-        optional(
+        optional_with_default(
             vec![],
             pair(
                 item.clone(),
@@ -1888,7 +1909,7 @@ pub fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
                         match trailing {
                             Trailing::Forbidden => token(""),
                             Trailing::Optional => {
-                                optional("", left(token(separator), spaces.clone()))
+                                optional_with_default("", left(token(separator), spaces.clone()))
                             }
                             Trailing::Mandatory => left(token(separator), spaces.clone()),
                         },
