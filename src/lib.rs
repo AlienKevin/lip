@@ -206,26 +206,26 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
                     output,
                     location,
                     state,
-                    committed: next_bound,
+                    committed: cur_committed,
                 } => ParseResult::Ok {
                     input,
                     output,
                     location,
                     state,
-                    committed: committed || next_bound,
+                    committed: committed || cur_committed,
                 },
                 ParseResult::Err {
                     message,
                     from,
                     to,
                     state,
-                    committed: next_bound,
+                    committed: cur_committed,
                 } => ParseResult::Err {
                     message,
                     from,
                     to,
                     state,
-                    committed: committed || next_bound,
+                    committed: committed || cur_committed,
                 },
             },
             ParseResult::Err {
@@ -547,8 +547,8 @@ where
 {
     move |input, location, state| {
         parser.parse(input, location, state).and_then(
-            |next_input, next_output, next_location, next_state: S| {
-                f(next_output).parse(next_input, next_location, next_state)
+            |cur_input, cur_output, cur_location, cur_state: S| {
+                f(cur_output).parse(cur_input, cur_location, cur_state)
             },
         )
     }
@@ -617,9 +617,9 @@ where
 {
     move |input, location, state| {
         parser1.parse(input, location, state).and_then(
-            |next_input, first_output, next_location, next_state: S| {
+            |cur_input, first_output, cur_location, cur_state: S| {
                 parser2
-                    .parse(next_input, next_location, next_state)
+                    .parse(cur_input, cur_location, cur_state)
                     .map(|second_output| (first_output, second_output))
             },
         )
@@ -786,20 +786,20 @@ where
 {
     move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
-        let mut end_bound = false;
+        let mut committed = false;
 
         match parser.parse(input, location, state.clone()) {
             ParseResult::Ok {
-                input: next_input,
+                input: cur_input,
                 output: first_item,
-                location: next_location,
-                state: next_state,
-                committed: next_bound,
+                location: cur_location,
+                state: cur_state,
+                committed: cur_committed,
             } => {
-                input = next_input;
-                location = next_location;
-                state = next_state;
-                end_bound = next_bound;
+                input = cur_input;
+                location = cur_location;
+                state = cur_state;
+                committed |= cur_committed;
                 output.push(first_item);
             }
             ParseResult::Err {
@@ -807,8 +807,9 @@ where
                 from,
                 to,
                 state,
-                committed,
+                committed: cur_committed,
             } => {
+                committed |= cur_committed;
                 return ParseResult::Err {
                     message,
                     from,
@@ -822,20 +823,26 @@ where
         loop {
             match parser.parse(input, location, state.clone()) {
                 ParseResult::Ok {
-                    input: next_input,
-                    output: next_item,
-                    location: next_location,
-                    state: next_state,
-                    committed: next_bound,
+                    input: cur_input,
+                    output: cur_item,
+                    location: cur_location,
+                    state: cur_state,
+                    committed: cur_committed,
                     ..
                 } => {
-                    input = next_input;
-                    location = next_location;
-                    state = next_state;
-                    end_bound = next_bound;
-                    output.push(next_item);
+                    input = cur_input;
+                    location = cur_location;
+                    state = cur_state;
+                    committed |= cur_committed;
+                    output.push(cur_item);
                 }
-                ParseResult::Err { .. } => break,
+                ParseResult::Err {
+                    committed: cur_committed,
+                    ..
+                } => {
+                    committed |= cur_committed;
+                    break;
+                }
             }
         }
 
@@ -844,7 +851,7 @@ where
             output,
             location,
             state,
-            committed: end_bound,
+            committed,
         }
     }
 }
@@ -860,35 +867,44 @@ where
 {
     move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
-        let mut end_bound = false;
+        let mut committed = false;
 
         // end_parser must run first
         // because the language of parser may be a superset of end_parser
         match end_parser.parse(input, location, ()) {
-            ParseResult::Ok { .. } => {
+            ParseResult::Ok {
+                committed: cur_committed,
+                ..
+            } => {
+                committed |= cur_committed;
                 return ParseResult::Ok {
                     input,
                     output,
                     location,
                     state,
-                    committed: end_bound,
-                }
+                    committed,
+                };
             }
-            ParseResult::Err { .. } => {} // no bit deal, continue parsing
+            ParseResult::Err {
+                committed: cur_committed,
+                ..
+            } => {
+                committed |= cur_committed;
+            } // no big deal, continue parsing
         }
 
         match parser.parse(input, location, state.clone()) {
             ParseResult::Ok {
-                input: next_input,
+                input: cur_input,
                 output: first_item,
-                location: next_location,
-                state: next_state,
-                committed: next_bound,
+                location: cur_location,
+                state: cur_state,
+                committed: cur_committed,
             } => {
-                input = next_input;
-                location = next_location;
-                state = next_state;
-                end_bound = next_bound;
+                input = cur_input;
+                location = cur_location;
+                state = cur_state;
+                committed |= cur_committed;
                 output.push(first_item);
             }
             ParseResult::Err {
@@ -896,8 +912,9 @@ where
                 from,
                 to,
                 state,
-                committed,
+                committed: cur_committed,
             } => {
+                committed |= cur_committed;
                 // end_parser must have failed as well
                 // because we only run parser if end_parser fails at first
                 if input == "" {
@@ -907,7 +924,7 @@ where
                         output,
                         location,
                         state,
-                        committed: end_bound,
+                        committed,
                     };
                 } else {
                     return ParseResult::Err {
@@ -923,55 +940,67 @@ where
 
         loop {
             match end_parser.parse(input, location, ()) {
-                ParseResult::Ok { .. } => {
+                ParseResult::Ok {
+                    committed: cur_committed,
+                    ..
+                } => {
+                    committed |= cur_committed;
                     return ParseResult::Ok {
                         input,
                         output,
                         location,
                         state,
-                        committed: end_bound,
-                    }
+                        committed,
+                    };
                 }
-                ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
-                    ParseResult::Ok {
-                        input: next_input,
-                        output: next_item,
-                        location: next_location,
-                        state: next_state,
-                        committed: next_bound,
-                    } => {
-                        input = next_input;
-                        location = next_location;
-                        state = next_state;
-                        end_bound = next_bound;
-                        output.push(next_item);
-                    }
-                    ParseResult::Err {
-                        from: end_from,
-                        to: end_to,
-                        ..
-                    } => {
-                        if input == "" {
-                            // reached the end of input
-                            return ParseResult::Ok {
-                                input,
-                                output,
-                                location,
-                                state,
-                                committed: end_bound,
-                            };
-                        } else {
-                            return ParseResult::Err {
-                                message: "I'm expecting either the intended string or the end delimiter. However, neither was found."
-                                    .to_string(),
-                                from: end_from,
-                                to: end_to,
-                                state,
-                                committed: end_bound,
-                            };
+                ParseResult::Err {
+                    committed: cur_committed,
+                    ..
+                } => {
+                    committed |= cur_committed;
+                    match parser.parse(input, location, state.clone()) {
+                        ParseResult::Ok {
+                            input: cur_input,
+                            output: cur_item,
+                            location: cur_location,
+                            state: cur_state,
+                            committed: cur_committed,
+                        } => {
+                            input = cur_input;
+                            location = cur_location;
+                            state = cur_state;
+                            committed |= cur_committed;
+                            output.push(cur_item);
+                        }
+                        ParseResult::Err {
+                            from: end_from,
+                            to: end_to,
+                            committed: cur_committed,
+                            ..
+                        } => {
+                            committed |= cur_committed;
+                            if input == "" {
+                                // reached the end of input
+                                return ParseResult::Ok {
+                                    input,
+                                    output,
+                                    location,
+                                    state,
+                                    committed,
+                                };
+                            } else {
+                                return ParseResult::Err {
+                                    message: "I'm expecting either the intended string or the end delimiter. However, neither was found."
+                                        .to_string(),
+                                    from: end_from,
+                                    to: end_to,
+                                    state,
+                                    committed,
+                                };
+                            }
                         }
                     }
-                },
+                }
             }
         }
     }
@@ -988,52 +1017,61 @@ where
 {
     move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
-        let mut end_bound = false;
+        let mut committed = false;
 
         match end_parser.parse(input, location, ()) {
             ParseResult::Ok {
                 location: end_location,
+                committed: cur_committed,
                 ..
             } => {
+                committed |= cur_committed;
                 return ParseResult::Err {
                     message: "I'm expecting at least one occurrence of the intended string but reached the end delimiter."
                         .to_string(),
                     from: location,
                     to: end_location,
                     state,
-                    committed: end_bound,
-                }
-            }
-            ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
-                ParseResult::Ok {
-                    input: next_input,
-                    output: first_item,
-                    location: next_location,
-                    state: next_state,
-                    committed: next_bound,
-                } => {
-                    input = next_input;
-                    location = next_location;
-                    state = next_state;
-                    end_bound = next_bound;
-                    output.push(first_item);
-                }
-                ParseResult::Err {
-                    message,
-                    from,
-                    to,
-                    state,
                     committed,
-                } => {
-                    return ParseResult::Err {
+                };
+            }
+            ParseResult::Err {
+                committed: cur_committed,
+                ..
+            } => {
+                committed |= cur_committed;
+                match parser.parse(input, location, state.clone()) {
+                    ParseResult::Ok {
+                        input: cur_input,
+                        output: first_item,
+                        location: cur_location,
+                        state: cur_state,
+                        committed: cur_committed,
+                    } => {
+                        input = cur_input;
+                        location = cur_location;
+                        state = cur_state;
+                        committed |= cur_committed;
+                        output.push(first_item);
+                    }
+                    ParseResult::Err {
                         message,
                         from,
                         to,
                         state,
-                        committed,
-                    };
+                        committed: cur_committed,
+                    } => {
+                        committed |= cur_committed;
+                        return ParseResult::Err {
+                            message,
+                            from,
+                            to,
+                            state,
+                            committed,
+                        };
+                    }
                 }
-            },
+            }
         }
 
         loop {
@@ -1044,28 +1082,30 @@ where
                         output,
                         location,
                         state,
-                        committed: end_bound,
-                    }
+                        committed,
+                    };
                 }
                 ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
                     ParseResult::Ok {
-                        input: next_input,
-                        output: next_item,
-                        location: next_location,
-                        state: next_state,
-                        committed: next_bound,
+                        input: cur_input,
+                        output: cur_item,
+                        location: cur_location,
+                        state: cur_state,
+                        committed: cur_committed,
                     } => {
-                        input = next_input;
-                        location = next_location;
-                        state = next_state;
-                        end_bound = next_bound;
-                        output.push(next_item);
+                        input = cur_input;
+                        location = cur_location;
+                        state = cur_state;
+                        committed |= cur_committed;
+                        output.push(cur_item);
                     }
                     ParseResult::Err {
                         from: end_from,
                         to: end_to,
+                        committed: cur_committed,
                         ..
                     } => {
+                        committed |= cur_committed;
                         if input == "" {
                             // reached the end of input
                             return ParseResult::Ok {
@@ -1073,7 +1113,7 @@ where
                                 output,
                                 location,
                                 state,
-                                committed: end_bound,
+                                committed,
                             };
                         } else {
                             return ParseResult::Err {
@@ -1082,7 +1122,7 @@ where
                                 from: end_from,
                                 to: end_to,
                                 state,
-                                committed: end_bound,
+                                committed,
                             };
                         }
                     }
@@ -1127,18 +1167,18 @@ where
         let mut committed = false;
 
         while let ParseResult::Ok {
-            input: next_input,
-            output: next_item,
-            location: next_location,
-            state: next_state,
-            committed: next_bound,
+            input: cur_input,
+            output: cur_item,
+            location: cur_location,
+            state: cur_state,
+            committed: cur_committed,
         } = parser.parse(input, location, state.clone())
         {
-            input = next_input;
-            location = next_location;
-            state = next_state;
-            committed = next_bound;
-            output.push(next_item);
+            input = cur_input;
+            location = cur_location;
+            state = cur_state;
+            committed |= cur_committed;
+            output.push(cur_item);
         }
 
         ParseResult::Ok {
@@ -1300,16 +1340,17 @@ where
 {
     move |input, location, state| match parser.parse(input, location, state) {
         ParseResult::Ok {
-            input: next_input,
-            location: next_location,
-            state: next_state,
+            input: cur_input,
+            location: cur_location,
+            state: cur_state,
+            committed: cur_committed,
             ..
         } => ParseResult::Ok {
-            input: next_input,
-            output: get_difference(input, next_input).to_string(),
-            location: next_location,
-            state: next_state,
-            committed: true,
+            input: cur_input,
+            output: get_difference(input, cur_input).to_string(),
+            location: cur_location,
+            state: cur_state,
+            committed: cur_committed,
         },
         ParseResult::Err {
             message,
@@ -1342,18 +1383,18 @@ where
 {
     move |input, location, state: S| match parser.parse(input, location, state.clone()) {
         ParseResult::Ok {
-            input: next_input,
+            input: cur_input,
             output: content,
-            location: next_location,
-            state: next_state,
-            committed: next_bound,
+            location: cur_location,
+            state: cur_state,
+            committed: cur_committed,
         } => {
             if predicate(&content) {
                 ParseResult::Ok {
-                    input: next_input,
+                    input: cur_input,
                     output: content,
-                    location: next_location,
-                    state: next_state,
+                    location: cur_location,
+                    state: cur_state,
                     committed: true,
                 }
             } else {
@@ -1365,13 +1406,25 @@ where
                     )
                     .to_string(),
                     from: location,
-                    to: next_location,
-                    state: next_state,
-                    committed: next_bound,
+                    to: cur_location,
+                    state: cur_state,
+                    committed: cur_committed,
                 }
             }
         }
-        err @ ParseResult::Err { .. } => err,
+        ParseResult::Err {
+            message,
+            from,
+            to,
+            state,
+            ..
+        } => ParseResult::Err {
+            message,
+            from,
+            to,
+            state,
+            committed: false,
+        },
     }
 }
 
@@ -1386,9 +1439,9 @@ fn space_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
 fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
     BoxedParser::new(
         (move |input, location, state: S| {
-            let mut next_input: &str = input;
-            let mut next_location: Location = location;
-            let mut next_state: S = state.clone();
+            let mut cur_input: &str = input;
+            let mut cur_location: Location = location;
+            let mut cur_state: S = state.clone();
             let result1 = chomp_ifc(&(|c: &char| *c == '\r'), "a carriage return")
                 .parse(input, location, state);
             match result1 {
@@ -1398,16 +1451,16 @@ fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
                     state,
                     ..
                 } => {
-                    next_input = input;
-                    next_location = location;
-                    next_state = state;
+                    cur_input = input;
+                    cur_location = location;
+                    cur_state = state;
                 }
                 _ => {}
             }
             let result = chomp_ifc(&(|c: &char| *c == '\n'), "a newline").parse(
-                next_input,
-                next_location,
-                next_state,
+                cur_input,
+                cur_location,
+                cur_state,
             );
             match result {
                 ParseResult::Ok {
@@ -1516,22 +1569,22 @@ where
         let mut counter = 0;
 
         while let ParseResult::Ok {
-            input: next_input,
-            output: next_item,
-            location: next_location,
-            state: next_state,
-            committed: next_bound,
+            input: cur_input,
+            output: cur_item,
+            location: cur_location,
+            state: cur_state,
+            committed: cur_committed,
         } = parser.parse(input, location, state.clone())
         {
             if counter >= times {
                 break;
             }
-            input = next_input;
-            location = next_location;
-            state = next_state;
-            output.push(next_item);
+            input = cur_input;
+            location = cur_location;
+            state = cur_state;
+            output.push(cur_item);
             counter = counter + 1;
-            committed = next_bound;
+            committed |= cur_committed;
         }
 
         ParseResult::Ok {
@@ -1952,13 +2005,13 @@ where
 {
     move |input, location, state| match parser.parse(input, location, state) {
         ParseResult::Ok {
-            input: next_input,
+            input: cur_input,
             output,
-            location: next_location,
-            state: next_state,
-            ..
+            location: cur_location,
+            state: cur_state,
+            committed: cur_committed,
         } => ParseResult::Ok {
-            input: next_input,
+            input: cur_input,
             output: Located {
                 value: output,
                 from: Location {
@@ -1966,13 +2019,13 @@ where
                     col: location.col,
                 },
                 to: Location {
-                    row: next_location.row,
-                    col: next_location.col,
+                    row: cur_location.row,
+                    col: cur_location.col,
                 },
             },
-            location: next_location,
-            state: next_state,
-            committed: true,
+            location: cur_location,
+            state: cur_state,
+            committed: cur_committed,
         },
         ParseResult::Err {
             message,
@@ -2018,16 +2071,16 @@ where
 {
     move |input, location, state| match parser.parse(input, location, state) {
         ParseResult::Ok {
-            input: next_input,
-            location: next_location,
-            state: next_state,
+            input: cur_input,
+            location: cur_location,
+            state: cur_state,
             output,
             committed,
         } => ParseResult::Ok {
-            input: next_input,
+            input: cur_input,
             output: output.clone(),
-            location: next_location,
-            state: f(output, next_state),
+            location: cur_location,
+            state: f(output, cur_state),
             committed,
         },
         err @ ParseResult::Err { .. } => err,
@@ -2041,12 +2094,12 @@ where
 {
     move |input, location, state| match parser.parse(input, location, state) {
         ParseResult::Ok {
-            input: next_input,
-            location: next_location,
-            state: next_state,
+            input: cur_input,
+            location: cur_location,
+            state: cur_state,
             output,
             ..
-        } => f(next_input, output, next_location, next_state),
+        } => f(cur_input, output, cur_location, cur_state),
         ParseResult::Err {
             message,
             from,
