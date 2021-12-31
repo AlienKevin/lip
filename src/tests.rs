@@ -621,6 +621,134 @@ this is the 4th line
 }
 
 #[test]
+fn test_any_char() {
+    assert_eq!(
+        any_char("a character").parse("a", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 2 },
+            output: 'a',
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_char("a character").parse("\n", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 2, col: 1 },
+            output: '\n',
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_char("a character").parse("혇", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 3 },
+            output: '혇',
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_char("a character").parse("我", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 3 },
+            output: "我",
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_char("a character").parse("🤣", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 3 },
+            output: '🤣',
+            state: (),
+            committed: false,
+        }
+    );
+}
+
+#[test]
+fn test_any_grapheme() {
+    assert_eq!(
+        any_grapheme("a grapheme").parse("a", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 2 },
+            output: "a",
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_grapheme("a grapheme").parse("\n", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 2, col: 1 },
+            output: "\n",
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_grapheme("a grapheme").parse("\r\n", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 2, col: 1 },
+            output: "\r\n",
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_grapheme("a grapheme").parse("혇", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 3 },
+            output: "혇",
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_grapheme("a grapheme").parse("我", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 3 },
+            output: "我",
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_grapheme("a grapheme").parse("🤣", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 3 },
+            output: "🤣",
+            state: (),
+            committed: false,
+        }
+    );
+    assert_eq!(
+        any_grapheme("a grapheme").parse("👩‍🔬", Location { row: 1, col: 1 }, ()),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 3 },
+            output: "👩‍🔬",
+            state: (),
+            committed: false,
+        }
+    );
+}
+
+#[test]
 fn test_chomp_if() {
     assert_succeed(
         succeed!(identity).keep(take_chomped(chomp_if(|c| c == "👨‍👩‍👧‍👦", "family emoji"))),

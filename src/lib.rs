@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use std::fmt::*;
 use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation as Uni;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Add location information to any type.
 ///
@@ -25,7 +26,12 @@ pub struct Located<A> {
 /// Records the location of a character within the source string.
 ///
 /// Uses `row` and `col`. The first character of the source is
-/// at row 1 and column 1.
+/// at row 1 and column 1. Column width aligns mostly with
+/// displayed width of unicode characters and strings
+/// according to the UAX#11 rules, with exceptions
+/// made for compound emojis like 👩‍🔬. For example, most CJK characters
+/// like 我 and 혇 occupies two column widths. And most emojis occupies
+/// two column widths as well.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Location {
     pub row: usize,
@@ -1196,16 +1202,16 @@ fn any_grapheme<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, &'a st
     move |input: &'a str, location: Location, state| match Uni::graphemes(input, true).next() {
         Some(c) => match c {
             "\n" | "\r\n" => ParseResult::Ok {
-            input: &input[c.len()..],
-            output: c,
+                input: &input[c.len()..],
+                output: c,
                 location: increment_row(1, location),
-            state,
-            committed: false,
+                state,
+                committed: false,
             },
             _ => ParseResult::Ok {
                 input: &input[c.len()..],
                 output: c,
-                location: increment_col(1, location),
+                location: increment_col(grapheme_column_width(c), location),
                 state,
                 committed: false,
             },
@@ -1225,16 +1231,16 @@ fn any_char<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, char, S> {
     move |input: &'a str, location: Location, state| match input.chars().next() {
         Some(c) => match c {
             '\n' => ParseResult::Ok {
-            input: &input[c.len_utf8()..],
-            output: c,
+                input: &input[c.len_utf8()..],
+                output: c,
                 location: increment_row(1, location),
-            state,
-            committed: false,
+                state,
+                committed: false,
             },
             _ => ParseResult::Ok {
                 input: &input[c.len_utf8()..],
                 output: c,
-                location: increment_col(1, location),
+                location: increment_col(char_column_width(c), location),
                 state,
                 committed: false,
             },
@@ -2158,4 +2164,34 @@ where
             .unwrap_err(),
         message
     )
+}
+
+/// Returns the number of cells visually occupied by a sequence
+/// of graphemes
+/// source: https://github.com/unicode-rs/unicode-width/issues/4#issuecomment-549906181
+fn unicode_column_width(s: &str) -> usize {
+    s.graphemes(true).map(grapheme_column_width).sum()
+}
+
+/// Returns the number of cells visually occupied by a grapheme.
+/// The input string must be a single grapheme.
+/// source: https://github.com/unicode-rs/unicode-width/issues/4#issuecomment-549906181
+fn grapheme_column_width(s: &str) -> usize {
+    // Due to this issue:
+    // https://github.com/unicode-rs/unicode-width/issues/4
+    // we cannot simply use the unicode-width crate to compute
+    // the desired value.
+    // Let's check for emoji-ness for ourselves first
+    use xi_unicode::EmojiExt;
+    for c in s.chars() {
+        if c.is_emoji_modifier_base() || c.is_emoji_modifier() {
+            // treat modifier sequences as double wide
+            return 2;
+        }
+    }
+    UnicodeWidthStr::width(s)
+}
+
+fn char_column_width(c: char) -> usize {
+    UnicodeWidthChar::width(c).unwrap_or(0)
 }
