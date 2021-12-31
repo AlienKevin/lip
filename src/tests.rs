@@ -657,7 +657,7 @@ fn test_any_char() {
         ParseResult::Ok {
             input: "",
             location: Location { row: 1, col: 3 },
-            output: "我",
+            output: '我',
             state: (),
             committed: false,
         }
