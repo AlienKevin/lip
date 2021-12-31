@@ -1194,12 +1194,21 @@ where
 /// Match any single unicode grapheme, internally used together with `pred`.
 fn any_grapheme<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, &'a str, S> {
     move |input: &'a str, location: Location, state| match Uni::graphemes(input, true).next() {
-        Some(c) => ParseResult::Ok {
+        Some(c) => match c {
+            "\n" | "\r\n" => ParseResult::Ok {
             input: &input[c.len()..],
             output: c,
-            location: increment_col(c.len(), location),
+                location: increment_row(1, location),
             state,
             committed: false,
+            },
+            _ => ParseResult::Ok {
+                input: &input[c.len()..],
+                output: c,
+                location: increment_col(1, location),
+                state,
+                committed: false,
+            },
         },
         _ => ParseResult::Err {
             message: format!("I'm expecting {} but reached the end of input.", expecting),
@@ -1214,12 +1223,21 @@ fn any_grapheme<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, &'a st
 /// Match any single character, internally used together with `pred`.
 fn any_char<'a, S: Clone + 'a>(expecting: &'a str) -> impl Parser<'a, char, S> {
     move |input: &'a str, location: Location, state| match input.chars().next() {
-        Some(c) => ParseResult::Ok {
+        Some(c) => match c {
+            '\n' => ParseResult::Ok {
             input: &input[c.len_utf8()..],
             output: c,
-            location: increment_col(c.len_utf8(), location),
+                location: increment_row(1, location),
             state,
             committed: false,
+            },
+            _ => ParseResult::Ok {
+                input: &input[c.len_utf8()..],
+                output: c,
+                location: increment_col(1, location),
+                state,
+                committed: false,
+            },
         },
         _ => ParseResult::Err {
             message: format!("I'm expecting {} but reached the end of input.", expecting),
