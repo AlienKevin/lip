@@ -7,10 +7,20 @@ description = "Lip provides powerful parser combinators for creating reusable an
 keywords = ["parser", "combinator", "functional"]
 license = "MIT"
 repository = "https://github.com/AlienKevin/lip"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 unicode-segmentation = "1.8.0"
 unicode-width = "0.1.9"
 xi-unicode = "0.3.0"
 itertools = "0.10.3"
+
+[dev-dependencies]
+criterion = { version = "0.3", default-features = false }
+
+[[bench]]
+name = "json"
+harness = false
+
+[profile.bench]
+lto = true
+codegen-units = 1
