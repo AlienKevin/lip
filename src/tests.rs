@@ -543,36 +543,63 @@ fn test_optional_with_default() {
 #[test]
 fn test_one_or_more_until() {
     assert_succeed(
-        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(
+            "the letter `a`",
+            token("a"),
+            "the ending `b`",
+            token("b"),
+        )),
         "ab",
         vec!["a"],
     );
     assert_succeed(
-        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(
+            "the letter `a`",
+            token("a"),
+            "the ending `b`",
+            token("b"),
+        )),
         "aaab",
         vec!["a", "a", "a"],
     );
     assert_fail(
-        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(
+            "the letter `a`",
+            token("a"),
+            "the ending `b`",
+            token("b"),
+        )),
         "b",
-        "I'm expecting at least one occurrence of the intended string but reached the end delimiter."
+        "I'm expecting at least one occurrence of the letter `a` but reached the ending `b`.",
     );
     assert_fail(
-        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(
+            "the letter `a`",
+            token("a"),
+            "the ending `b`",
+            token("b"),
+        )),
         "aaac",
-        "I'm expecting either the intended string or the end delimiter. However, neither was found.",
+        "I'm expecting either the letter `a` or the ending `b`. However, neither was found.",
     );
     assert_succeed(
-        succeed!(identity).keep(one_or_more_until(token("a"), token("b"))),
+        succeed!(identity).keep(one_or_more_until(
+            "the letter `a`",
+            token("a"),
+            "the ending `b`",
+            token("b"),
+        )),
         "aaa",
         vec!["a", "a", "a"],
     );
 
     assert_succeed(
         succeed!(identity).keep(one_or_more_until(
+            "the line",
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
+            "the end symbol",
             token("<end>"),
         )),
         "this is the 1st line
@@ -592,9 +619,11 @@ this is the 4th line
 
     assert_succeed(
         succeed!(identity).keep(one_or_more_until(
+            "the line",
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
+            "the end symbol",
             token("<end>"),
         )),
         "this is the 1st line
@@ -612,13 +641,114 @@ this is the 4th line
 
     assert_fail(
         succeed!(identity).keep(one_or_more_until(
+            "the line",
             succeed!(|line| line)
                 .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
                 .skip(token("\n")),
+            "the end symbol",
             token("<end>"),
         )),
         "<end>",
-        "I'm expecting at least one occurrence of the intended string but reached the end delimiter.",
+        "I'm expecting at least one occurrence of the line but reached the end symbol.",
+    );
+
+    // adapted from test_zero_or_more_until()
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more_until(
+                    "a letter `a`",
+                    token("a"),
+                    "an end symbol",
+                    token("^")
+                ))
+                .skip(token("b")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting either a letter `a` or an end symbol. However, neither was found.",
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more_until(
+                    "a letter `a`",
+                    token("a"),
+                    "an end symbol",
+                    token("^")
+                ))
+                .skip(token("b")),
+            token("aab").map(|s| vec![s])
+        )),
+        "b",
+        "I'm expecting a `aab` but found `b`.",
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more_until(
+                    "an `aa`",
+                    token("aa"),
+                    "an end symbol",
+                    token("^")
+                ))
+                .skip(token("!")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting either an `aa` or an end symbol. However, neither was found.",
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more_until(
+                    "an `aa!`",
+                    succeed!(identity).keep(token("aa")).skip(token("!")),
+                    "an end symbol",
+                    token("^")
+                ))
+                .skip(token("?")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting a `!` but found `b`.",
+    );
+
+    // committed err when running end_parser
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more_until(
+                    "an `aa`",
+                    token("aa"),
+                    "an end symbol",
+                    succeed!(identity).keep(token("b")).skip(token("!"))
+                ))
+                .skip(token("?")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting a `!` but found nothing.",
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more_until(
+                    "an `aa`",
+                    token("aa"),
+                    "an end symbol",
+                    succeed!(identity).keep(token("b")).skip(token("!"))
+                ))
+                .skip(token("?")),
+            token("aab").map(|s| vec![s])
+        )),
+        "b",
+        "I'm expecting a `!` but found nothing.",
     );
 }
 

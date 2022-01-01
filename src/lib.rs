@@ -1058,16 +1058,16 @@ where
                     message,
                     from,
                     to,
-                    committed: cur_committed,
+                    committed: err_committed,
                     ..
                 } => {
-                    if cur_committed {
+                    if err_committed {
                         return ParseResult::Err {
                             message,
                             from,
                             to,
                             state,
-                            committed,
+                            committed: err_committed,
                         };
                     }
                     match parser.parse(input, location, state.clone()) {
@@ -1119,7 +1119,9 @@ where
 
 /// Run the parser one or more times until an end delimiter (or end of input) and combine each output into a vector of outputs.
 pub fn one_or_more_until<'a, P, A, S: Clone + 'a, E, B>(
+    item_name: &'a str,
     parser: P,
+    end_name: &'a str,
     end_parser: E,
 ) -> impl Parser<'a, Vec<A>, S>
 where
@@ -1138,8 +1140,10 @@ where
             } => {
                 committed |= cur_committed;
                 return ParseResult::Err {
-                    message: "I'm expecting at least one occurrence of the intended string but reached the end delimiter."
-                        .to_string(),
+                    message: format!(
+                        "I'm expecting at least one occurrence of {} but reached {}.",
+                        item_name, end_name
+                    ),
                     from: location,
                     to: end_location,
                     state,
@@ -1147,10 +1151,21 @@ where
                 };
             }
             ParseResult::Err {
-                committed: cur_committed,
+                message,
+                from,
+                to,
+                committed: err_committed,
                 ..
             } => {
-                committed |= cur_committed;
+                if err_committed {
+                    return ParseResult::Err {
+                        message,
+                        from,
+                        to,
+                        state,
+                        committed: err_committed,
+                    };
+                }
                 match parser.parse(input, location, state.clone()) {
                     ParseResult::Ok {
                         input: cur_input,
@@ -1196,48 +1211,64 @@ where
                         committed,
                     };
                 }
-                ParseResult::Err { .. } => match parser.parse(input, location, state.clone()) {
-                    ParseResult::Ok {
-                        input: cur_input,
-                        output: cur_item,
-                        location: cur_location,
-                        state: cur_state,
-                        committed: cur_committed,
-                    } => {
-                        input = cur_input;
-                        location = cur_location;
-                        state = cur_state;
-                        committed |= cur_committed;
-                        output.push(cur_item);
+                ParseResult::Err {
+                    message,
+                    from,
+                    to,
+                    committed: err_committed,
+                    ..
+                } => {
+                    if err_committed {
+                        return ParseResult::Err {
+                            message,
+                            from,
+                            to,
+                            state,
+                            committed: err_committed,
+                        };
                     }
-                    ParseResult::Err {
-                        from: end_from,
-                        to: end_to,
-                        committed: cur_committed,
-                        ..
-                    } => {
-                        committed |= cur_committed;
-                        if input == "" {
-                            // reached the end of input
-                            return ParseResult::Ok {
-                                input,
-                                output,
-                                location,
-                                state,
-                                committed,
-                            };
-                        } else {
-                            return ParseResult::Err {
-                                message: "I'm expecting either the intended string or the end delimiter. However, neither was found."
-                                    .to_string(),
+                    match parser.parse(input, location, state.clone()) {
+                        ParseResult::Ok {
+                            input: cur_input,
+                            output: cur_item,
+                            location: cur_location,
+                            state: cur_state,
+                            committed: cur_committed,
+                        } => {
+                            input = cur_input;
+                            location = cur_location;
+                            state = cur_state;
+                            committed |= cur_committed;
+                            output.push(cur_item);
+                        }
+                        ParseResult::Err {
+                            from: end_from,
+                            to: end_to,
+                            committed: cur_committed,
+                            ..
+                        } => {
+                            committed |= cur_committed;
+                            if input == "" {
+                                // reached the end of input
+                                return ParseResult::Ok {
+                                    input,
+                                    output,
+                                    location,
+                                    state,
+                                    committed,
+                                };
+                            } else {
+                                return ParseResult::Err {
+                                message: format!("I'm expecting either {} or {}. However, neither was found.", item_name, end_name),
                                 from: end_from,
                                 to: end_to,
                                 state,
                                 committed,
                             };
+                            }
                         }
                     }
-                },
+                }
             }
         }
     }
