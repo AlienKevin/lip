@@ -522,6 +522,55 @@ this is the 4th line
 }
 
 #[test]
+fn test_zero_or_more() {
+    assert_succeed(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(zero_or_more(token("a")))
+                .skip(token("b")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        vec!["a", "a"],
+    );
+
+    assert_succeed(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(zero_or_more(token("a")))
+                .skip(token("b")),
+            token("aab").map(|s| vec![s])
+        )),
+        "b",
+        vec![],
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(zero_or_more(token("aa")))
+                .skip(token("!")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting a `!` but found `b`.",
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(zero_or_more(
+                    succeed!(identity).keep(token("aa")).skip(token("!"))
+                ))
+                .skip(token("?")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting a `!` but found `b`.",
+    );
+}
+
+#[test]
 fn test_zero_or_more_until() {
     assert_succeed(
         succeed!(identity).keep(zero_or_more_until(token("a"), token("b"))),

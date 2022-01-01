@@ -1175,19 +1175,41 @@ where
         let mut output = Vec::new();
         let mut committed = false;
 
-        while let ParseResult::Ok {
+        loop {
+            match parser.parse(input, location, state.clone()) {
+                ParseResult::Ok {
             input: cur_input,
             output: cur_item,
             location: cur_location,
             state: cur_state,
             committed: cur_committed,
-        } = parser.parse(input, location, state.clone())
-        {
+                } => {
             input = cur_input;
             location = cur_location;
             state = cur_state;
             committed |= cur_committed;
             output.push(cur_item);
+                }
+                ParseResult::Err {
+                    message,
+                    from,
+                    to,
+                    state,
+                    committed,
+                } => {
+                    if committed {
+                        return ParseResult::Err {
+                            message,
+                            from,
+                            to,
+                            state,
+                            committed,
+                        };
+                    } else {
+                        break;
+                    }
+                }
+            }
         }
 
         ParseResult::Ok {
