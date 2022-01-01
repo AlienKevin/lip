@@ -946,7 +946,9 @@ where
 
 /// Run the parser zero or more times until an end delimiter (or end of input) and combine each output into a vector of outputs.
 pub fn zero_or_more_until<'a, P, A, S: Clone + 'a, E, B>(
+    item_name: &'a str,
     parser: P,
+    end_name: &'a str,
     end_parser: E,
 ) -> impl Parser<'a, Vec<A>, S>
 where
@@ -974,10 +976,21 @@ where
                 };
             }
             ParseResult::Err {
-                committed: cur_committed,
+                message,
+                from,
+                to,
+                committed,
                 ..
             } => {
-                committed |= cur_committed;
+                if committed {
+                    return ParseResult::Err {
+                        message,
+                        from,
+                        to,
+                        state,
+                        committed,
+                    };
+                }
             } // no big deal, continue parsing
         }
 
@@ -1042,10 +1055,21 @@ where
                     };
                 }
                 ParseResult::Err {
+                    message,
+                    from,
+                    to,
                     committed: cur_committed,
                     ..
                 } => {
-                    committed |= cur_committed;
+                    if cur_committed {
+                        return ParseResult::Err {
+                            message,
+                            from,
+                            to,
+                            state,
+                            committed,
+                        };
+                    }
                     match parser.parse(input, location, state.clone()) {
                         ParseResult::Ok {
                             input: cur_input,
@@ -1078,8 +1102,7 @@ where
                                 };
                             } else {
                                 return ParseResult::Err {
-                                    message: "I'm expecting either the intended string or the end delimiter. However, neither was found."
-                                        .to_string(),
+                                    message: format!("I'm expecting either {} or {}. However, neither was found.", item_name, end_name),
                                     from: end_from,
                                     to: end_to,
                                     state,
