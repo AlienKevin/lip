@@ -249,6 +249,38 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
             },
         }
     }
+
+    pub fn backtrackable(self) -> ParseResult<'a, T, S> {
+        match self {
+            ParseResult::Ok {
+                input,
+                location,
+                output,
+                state,
+                ..
+            } => ParseResult::Ok {
+                input,
+                location,
+                output,
+                state,
+                committed: false,
+            },
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                ..
+            } => ParseResult::Err {
+                message: message,
+                from,
+                to,
+                state,
+                committed: false,
+            },
+        }
+    }
+
     fn unwrap(self, source: &'a str) -> T {
         match self {
             ParseResult::Ok { output, .. } => output,
@@ -479,6 +511,15 @@ pub trait Parser<'a, Output, State: Clone> {
     {
         BoxedParser::new(left(self, ignored_parser))
     }
+
+    fn backtrackable(self) -> BoxedParser<'a, Output, State>
+    where
+        Self: Sized + 'a,
+        Output: Clone + 'a,
+        State: 'a,
+    {
+        BoxedParser::new(backtrackable(self))
+    }
 }
 
 impl<'a, F, Output, State: 'a> Parser<'a, Output, State> for F
@@ -697,6 +738,13 @@ where
             .parse(input, location, state)
             .map_err(|error_message| map_fn(error_message))
     }
+}
+
+fn backtrackable<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, A, S>
+where
+    P: Parser<'a, A, S>,
+{
+    move |input, location, state| parser.parse(input, location, state).backtrackable()
 }
 
 /// Run the left parser, then the right, last keep the left result and discard the right.
