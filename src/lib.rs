@@ -2052,13 +2052,14 @@ pub fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
             vec![],
             pair(
                 item.clone(),
+                right(
+                    spaces.clone(),
                 left(
-                    zero_or_more(right(
-                        wrap(spaces.clone(), token(separator), spaces.clone()),
+                        zero_or_more(wrap(
+                            left(token(separator), spaces.clone()).backtrackable(),
                         item.clone(),
-                    )),
-                    right(
                         spaces.clone(),
+                        )),
                         match trailing {
                             Trailing::Forbidden => token(""),
                             Trailing::Optional => {
