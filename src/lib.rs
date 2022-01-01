@@ -6,6 +6,7 @@
 #[macro_use]
 mod tests;
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::*;
 use std::rc::Rc;
@@ -36,6 +37,20 @@ pub struct Located<A> {
 pub struct Location {
     pub row: usize,
     pub col: usize,
+}
+
+impl Ord for Location {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.row
+            .cmp(&other.row)
+            .then_with(|| self.col.cmp(&other.col))
+    }
+}
+
+impl PartialOrd for Location {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// Records the result of the parser.
@@ -1226,17 +1241,17 @@ where
         loop {
             match parser.parse(input, location, state.clone()) {
                 ParseResult::Ok {
-            input: cur_input,
-            output: cur_item,
-            location: cur_location,
-            state: cur_state,
-            committed: cur_committed,
+                    input: cur_input,
+                    output: cur_item,
+                    location: cur_location,
+                    state: cur_state,
+                    committed: cur_committed,
                 } => {
-            input = cur_input;
-            location = cur_location;
-            state = cur_state;
-            committed |= cur_committed;
-            output.push(cur_item);
+                    input = cur_input;
+                    location = cur_location;
+                    state = cur_state;
+                    committed |= cur_committed;
+                    output.push(cur_item);
                 }
                 ParseResult::Err {
                     message,
@@ -2054,11 +2069,11 @@ pub fn sequence<'a, A: Clone + 'a, S: Clone + 'a>(
                 item.clone(),
                 right(
                     spaces.clone(),
-                left(
+                    left(
                         zero_or_more(wrap(
                             left(token(separator), spaces.clone()).backtrackable(),
-                        item.clone(),
-                        spaces.clone(),
+                            item.clone(),
+                            spaces.clone(),
                         )),
                         match trailing {
                             Trailing::Forbidden => token(""),
