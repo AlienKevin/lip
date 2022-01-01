@@ -879,9 +879,8 @@ where
                 from,
                 to,
                 state,
-                committed: cur_committed,
+                committed,
             } => {
-                committed |= cur_committed;
                 return ParseResult::Err {
                     message,
                     from,
@@ -909,11 +908,23 @@ where
                     output.push(cur_item);
                 }
                 ParseResult::Err {
-                    committed: cur_committed,
-                    ..
+                    message,
+                    from,
+                    to,
+                    state,
+                    committed,
                 } => {
-                    committed |= cur_committed;
+                    if committed {
+                        return ParseResult::Err {
+                            message,
+                            from,
+                            to,
+                            state,
+                            committed,
+                        };
+                    } else {
                     break;
+                    }
                 }
             }
         }

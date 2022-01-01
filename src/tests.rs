@@ -189,6 +189,64 @@ fn test_one_or_more() {
         "bbc",
         "I'm expecting a `a` but found `b`.",
     );
+
+    assert_succeed(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more(token("a")))
+                .skip(token("b")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        vec!["a", "a"],
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more(token("a")))
+                .skip(token("b")),
+            token("aab").map(|s| vec![s])
+        )),
+        "b",
+        "I'm expecting a `aab` but found nothing.",
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more(token("aa")))
+                .skip(token("!")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting a `!` but found `b`.",
+    );
+
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more(
+                    succeed!(identity).keep(token("aa")).skip(token("!"))
+                ))
+                .skip(token("?")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aab",
+        "I'm expecting a `!` but found `b`.",
+    );
+    assert_fail(
+        succeed!(identity).keep(one_of!(
+            succeed!(identity)
+                .keep(one_or_more(
+                    succeed!(identity).keep(token("aa")).skip(token("!"))
+                ))
+                .skip(token("?")),
+            token("aab").map(|s| vec![s])
+        )),
+        "aa!aab",
+        "I'm expecting a `!` but found `b`.",
+    );
 }
 
 #[test]
