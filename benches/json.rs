@@ -1,5 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 
+#[macro_use]
+extern crate partial_application;
+
 use lip::Trailing;
 use lip::*;
 use std::collections::HashMap;
@@ -137,15 +140,10 @@ fn is_non_escape(c: &char) -> bool {
     }
 }
 
-fn bench_json(bencher: &mut Bencher<'_>) {
-    let data = include_str!("data.json");
+fn bench_json(data: &str, bencher: &mut Bencher<'_>) {
     let parser = value();
     match parser.run(data, ()) {
-        ParseResult::Ok {
-            output: Value::VArray(_),
-            ..
-        } => (),
-        ParseResult::Ok { .. } => panic!(),
+        ParseResult::Ok { .. } => (),
         ParseResult::Err {
             message, from, to, ..
         } => {
@@ -160,7 +158,11 @@ fn bench_json(bencher: &mut Bencher<'_>) {
 }
 
 fn bench(c: &mut Criterion) {
-    c.bench_function("json", bench_json);
+    c.bench_function("data", partial!(bench_json => include_str!("data.json"), _));
+    c.bench_function(
+        "twitter",
+        partial!(bench_json => include_str!("twitter.json"), _),
+    );
 }
 
 criterion_group!(json, bench);
