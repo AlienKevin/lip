@@ -101,7 +101,30 @@ fn test_update() {
 
 #[test]
 fn test_token() {
-    assert_succeed(token(""), "aweiow", "");
+    assert_succeed(token(""), "abc", "");
+    assert_succeed(token("a"), "abc", "a");
+    assert_succeed(token("ab"), "abc", "ab");
+    assert_succeed(token("abc"), "abc", "abc");
+
+    // Normalization Form C (NFC) Characters are decomposed and then re-composed by canonical equivalence
+    assert_succeed(token("ãáç"), "ãáç", "ãáç");
+    // Normalization Form D (NFD) Characters are decomposed by canonical equivalence
+    assert_succeed(token("ãáç"), "ãáç", "ãáç");
+
+    // Normalization Form C (NFC) Characters are decomposed and then re-composed by canonical equivalence
+    assert_fail(token("ãáç"), "ãá", "I'm expecting a `ãáç` but found `ãá`.");
+    // Normalization Form D (NFD) Characters are decomposed by canonical equivalence
+    assert_fail(token("ãáç"), "ãá", "I'm expecting a `ãáç` but found `ãá`.");
+
+    // Normalization Form C (NFC) Characters are decomposed and then re-composed by canonical equivalence
+    assert_fail(token("ãáç"), "ãá\nabc", "I'm expecting a `ãáç` but found `ãá\\n`.");
+    // Normalization Form D (NFD) Characters are decomposed by canonical equivalence
+    assert_fail(token("ãáç"), "ãá\nabc", "I'm expecting a `ãáç` but found `ãá\\n`.");
+
+    assert_succeed(token("👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢一餐"), "👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢一餐", "👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢一餐");
+    assert_succeed(token("👩‍🔬👩🏿‍💻"), "👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢一餐", "👩‍🔬👩🏿‍💻");
+
+    assert_fail(token("👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢一餐"), "👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢", "I'm expecting a `👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢一餐` but found `👩‍🔬👩🏿‍💻我哋👨‍👨‍👧‍👧呢`.");
 }
 
 #[test]
@@ -209,7 +232,7 @@ fn test_one_or_more() {
             token("aab").map(|s| vec![s])
         )),
         "b",
-        "I'm expecting a `aab` but found nothing.",
+        "I'm expecting a `aab` but found `b`.",
     );
 
     assert_fail(

@@ -6,6 +6,7 @@
 #[macro_use]
 mod tests;
 
+use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::*;
@@ -620,34 +621,36 @@ where
 }
 
 /// Parse a given token string.
+///
+/// ⚠️ Newlines are not allowed in tokens.
 pub fn token<'a, S: Clone + 'a>(expected: &'static str) -> BoxedParser<'a, &str, S> {
     BoxedParser::new(move |input: &'a str, location: Location, state: S| {
-        let found = input.get(0..expected.len());
-        match found {
-            Some(next) if next == expected => ParseResult::Ok {
+        let peek = input.get(0..expected.len());
+        if peek == Some(expected) {
+            ParseResult::Ok {
                 input: &input[expected.len()..],
                 output: expected,
-                location: increment_col(expected.len(), location),
+                location: increment_col(unicode_column_width(expected), location),
                 state,
                 committed: true,
-            },
-            _ => ParseResult::Err {
+            }
+        } else {
+            let expected_len = expected.graphemes(true).count();
+            let peek_str = &input.graphemes(true).take(expected_len).join("");
+            ParseResult::Err {
                 message: format!(
                     "I'm expecting a `{}` but found {}.",
                     expected,
-                    display_token(found)
+                    display_token(peek_str)
                 ),
                 from: location,
-                to: match found {
-                    Some(found_str) => Location {
-                        col: location.col + found_str.len(),
-                        ..location
-                    },
-                    None => location,
+                to: Location {
+                    col: location.col + unicode_column_width(peek_str),
+                    ..location
                 },
                 state,
                 committed: false,
-            },
+            }
         }
     })
 }
@@ -666,10 +669,12 @@ fn increment_row(additional_row: usize, location: Location) -> Location {
     }
 }
 
-fn display_token<T: Display>(token: Option<T>) -> String {
-    match token {
-        Some(token_content) => format!("`{}`", token_content).replace("\n", "\\n"),
-        None => "nothing".to_string(),
+fn display_token<T: Display>(token: T) -> String {
+    let token_str = &token.to_string();
+    if unicode_column_width(token_str) == 0 {
+        "nothing".to_string()
+    } else {
+        format!("`{}`", token_str.replace("\n", "\\n"))
     }
 }
 
@@ -923,7 +928,7 @@ where
                             committed,
                         };
                     } else {
-                    break;
+                        break;
                     }
                 }
             }
@@ -1525,7 +1530,7 @@ where
                     message: format!(
                         "I'm expecting {} but found {}.",
                         expecting,
-                        display_token(Some(content)),
+                        display_token(content),
                     )
                     .to_string(),
                     from: location,
