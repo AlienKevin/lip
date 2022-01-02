@@ -77,7 +77,7 @@ fn string<'a>() -> BoxedParser<'a, String, ()> {
             "a character",
             one_of!(
                 succeed!(|cs: String| cs.chars().next().unwrap()).keep(take_chomped(chomp_ifc(
-                    |c| is_non_escape(c),
+                    is_non_escape,
                     "Any Unicode characters except \" or \\ or control characters",
                 ))),
                 succeed!(identity).skip(token("\\")).keep(one_of!(
@@ -115,7 +115,7 @@ fn hex_digit<'a>() -> BoxedParser<'a, char, ()> {
 
 fn number<'a>() -> BoxedParser<'a, f64, ()> {
     // println!("number");
-    succeed!(|sign: Option<_>, n: f64| if let Some(_) = sign { -n } else { n })
+    succeed!(|sign: Option<_>, n: f64| if sign.is_some() { -n } else { n })
         .keep(optional(token("-")))
         .keep(float())
 }

@@ -288,7 +288,7 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
                 state,
                 ..
             } => ParseResult::Err {
-                message: message,
+                message,
                 from,
                 to,
                 state,
@@ -716,8 +716,8 @@ where
     P: Parser<'a, A, S>,
     F: Fn(A, S) -> B,
 {
-    BoxedParser::new(move |input, location, state: S| {
-        match parser.parse(input, location, state.clone()) {
+    BoxedParser::new(
+        move |input, location, state: S| match parser.parse(input, location, state) {
             ParseResult::Ok {
                 input,
                 output,
@@ -744,8 +744,8 @@ where
                 state,
                 committed,
             },
-        }
-    })
+        },
+    )
 }
 
 fn map_err<'a, P, F, A, S: Clone + 'a>(parser: P, map_fn: F) -> impl Parser<'a, A, S>
@@ -1018,7 +1018,7 @@ where
                 committed |= cur_committed;
                 // end_parser must have failed as well
                 // because we only run parser if end_parser fails at first
-                if input == "" {
+                if input.is_empty() {
                     // reached the end of input
                     return ParseResult::Ok {
                         input,
@@ -1091,7 +1091,7 @@ where
                             ..
                         } => {
                             committed |= cur_committed;
-                            if input == "" {
+                            if input.is_empty() {
                                 // reached the end of input
                                 return ParseResult::Ok {
                                     input,
@@ -1248,7 +1248,7 @@ where
                             ..
                         } => {
                             committed |= cur_committed;
-                            if input == "" {
+                            if input.is_empty() {
                                 // reached the end of input
                                 return ParseResult::Ok {
                                     input,
@@ -1279,7 +1279,7 @@ where
     P: Parser<'a, A, S>,
 {
     parser.update(|input, output, location, state| {
-        if input != "" {
+        if !input.is_empty() {
             ParseResult::Err {
                 message: "I'm expecting the end of input.".to_string(),
                 from: location,
@@ -1563,7 +1563,7 @@ where
     P: Parser<'a, A, S>,
     F: Fn(&A) -> bool,
 {
-    move |input, location, state: S| match parser.parse(input, location, state.clone()) {
+    move |input, location, state: S| match parser.parse(input, location, state) {
         ParseResult::Ok {
             input: cur_input,
             output: content,
@@ -1585,8 +1585,7 @@ where
                         "I'm expecting {} but found {}.",
                         expecting,
                         display_token(content),
-                    )
-                    .to_string(),
+                    ),
                     from: location,
                     to: cur_location,
                     state: cur_state,
@@ -1626,18 +1625,16 @@ fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
             let mut cur_state: S = state.clone();
             let result1 = chomp_ifc(&(|c: &char| *c == '\r'), "a carriage return")
                 .parse(input, location, state);
-            match result1 {
-                ParseResult::Ok {
-                    input,
-                    location,
-                    state,
-                    ..
-                } => {
-                    cur_input = input;
-                    cur_location = location;
-                    cur_state = state;
-                }
-                _ => {}
+            if let ParseResult::Ok {
+                input,
+                location,
+                state,
+                ..
+            } = result1
+            {
+                cur_input = input;
+                cur_location = location;
+                cur_state = state;
             }
             let result = chomp_ifc(&(|c: &char| *c == '\n'), "a newline").parse(
                 cur_input,
@@ -1766,7 +1763,7 @@ where
             location = cur_location;
             state = cur_state;
             output.push(cur_item);
-            counter = counter + 1;
+            counter += 1;
             committed |= cur_committed;
         }
 
@@ -1801,7 +1798,7 @@ where
     P: Parser<'a, A, S>,
 {
     BoxedParser::new(move |input, location, state: S| {
-        let result = match parser1.parse(input, location, state.clone()) {
+        let result = match parser1.parse(input, location, state) {
             ok @ ParseResult::Ok { .. } => ok,
             ParseResult::Err {
                 message,
@@ -1953,7 +1950,7 @@ fn digits<'a, S: Clone + 'a>(
 ) -> impl Parser<'a, String, S> {
     take_chomped(chomp_while1c(&(|c: &char| c.is_digit(10)), name)).update(
         move |input, digits, location, state| {
-            if !allow_leading_zeroes && digits.chars().next() == Some('0') && digits.len() > 1 {
+            if !allow_leading_zeroes && digits.starts_with('0') && digits.len() > 1 {
                 ParseResult::Err {
                     message: format!("You can't have leading zeroes in {}.", name),
                     from: Location {
@@ -2037,49 +2034,47 @@ where
                 state,
                 committed: false,
             }
+        } else if name
+            .chars()
+            .zip(name[1..].chars())
+            .any(|(c, next_c)| separator(&c) && separator(&next_c))
+        {
+            ParseResult::Err {
+                message: format!(
+                    "I'm expecting {} but found `{}` with duplicated separators.",
+                    expecting, name
+                ),
+                from: Location {
+                    col: location.col - name.len(),
+                    ..location
+                },
+                to: location,
+                state,
+                committed: false,
+            }
+        } else if separator(&name.chars().last().unwrap()) {
+            ParseResult::Err {
+                message: format!(
+                    "I'm expecting {} but found `{}` ended with the separator `{}`.",
+                    expecting,
+                    name,
+                    &name.chars().last().unwrap()
+                ),
+                from: Location {
+                    col: location.col - name.len(),
+                    ..location
+                },
+                to: location,
+                state,
+                committed: false,
+            }
         } else {
-            if name
-                .chars()
-                .zip(name[1..].chars())
-                .any(|(c, next_c)| separator(&c) && separator(&next_c))
-            {
-                ParseResult::Err {
-                    message: format!(
-                        "I'm expecting {} but found `{}` with duplicated separators.",
-                        expecting, name
-                    ),
-                    from: Location {
-                        col: location.col - name.len(),
-                        ..location
-                    },
-                    to: location,
-                    state,
-                    committed: false,
-                }
-            } else if separator(&name.chars().last().unwrap()) {
-                ParseResult::Err {
-                    message: format!(
-                        "I'm expecting {} but found `{}` ended with the separator `{}`.",
-                        expecting,
-                        name,
-                        &name.chars().last().unwrap()
-                    ),
-                    from: Location {
-                        col: location.col - name.len(),
-                        ..location
-                    },
-                    to: location,
-                    state,
-                    committed: false,
-                }
-            } else {
-                ParseResult::Ok {
-                    input,
-                    location,
-                    output: name.clone(),
-                    state,
-                    committed: true,
-                }
+            ParseResult::Ok {
+                input,
+                location,
+                output: name,
+                state,
+                committed: true,
             }
         }
     })
@@ -2244,10 +2239,9 @@ pub fn display_error(source: &str, error_message: String, from: Location, to: Lo
     };
     let row_tag = row.to_string();
     let row_tag_len = row_tag.len();
-    let error_line = row_tag + "| " + source.split("\n").collect::<Vec<&str>>()[row - 1];
+    let error_line = row_tag + "| " + source.split('\n').collect::<Vec<&str>>()[row - 1];
     let error_pointer = " ".repeat(col - 1 + row_tag_len + 2) + &"^".repeat(error_length);
-    let error_report = error_line + "\n" + &error_pointer + "\n" + "⚠️ " + &error_message;
-    error_report
+    error_line + "\n" + &error_pointer + "\n" + "⚠️ " + &error_message
 }
 
 fn update_state<'a, P, A: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl Parser<'a, A, S>
