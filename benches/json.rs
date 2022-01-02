@@ -158,8 +158,10 @@ fn bench_json(data: &str, bencher: &mut Bencher<'_>) {
 }
 
 fn bench(c: &mut Criterion) {
-    c.bench_function("data", partial!(bench_json => include_str!("data.json"), _));
-    c.bench_function(
+    let mut group = c.benchmark_group("json");
+    group.sample_size(10);
+    group.bench_function("data", partial!(bench_json => include_str!("data.json"), _));
+    group.bench_function(
         "twitter",
         partial!(bench_json => include_str!("twitter.json"), _),
     );
