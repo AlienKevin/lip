@@ -10,7 +10,6 @@ use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::*;
-use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation as Uni;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -319,15 +318,357 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
     }
 }
 
-pub trait Parser<'a, Output, State: Clone> {
-    /// Parse a given input, starting at
-    /// a given location and state.
+struct Map<P, F>(P, F);
+
+impl<'a, A, B, P, F> Parser for Map<P, F>
+where
+    P: Parser<Output = A>,
+    F: Fn(A) -> B,
+{
+    type Output = B;
+
+    type State = P::State;
+
     fn parse(
         &self,
         input: &'a str,
         location: Location,
-        state: State,
-    ) -> ParseResult<'a, Output, State>;
+        state: Self::State,
+    ) -> ParseResult<'a, B, Self::State> {
+        self.0.parse(input, location, state).map(self.1)
+    }
+}
+
+struct MapWithState<P, F>(P, F);
+
+impl<'a, A, B, P, F> Parser for MapWithState<P, F>
+where
+    P: Parser<Output = A>,
+    F: Fn(A, Self::State) -> B,
+{
+    type Output = B;
+
+    type State = P::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, B, Self::State> {
+        match self.0.parse(input, location, state) {
+            ParseResult::Ok {
+                input,
+                output,
+                location,
+                state,
+                committed,
+            } => ParseResult::Ok {
+                input,
+                output: self.1(output, state.clone()),
+                location,
+                state,
+                committed,
+            },
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            } => ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            },
+        }
+    }
+}
+
+struct MapErr<P, F>(P, F);
+
+impl<'a, P, A, F> Parser for MapErr<P, F>
+where
+    P: Parser,
+    F: Fn(String) -> String,
+{
+    type Output = A;
+
+    type State = P::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        self.0.parse(input, location, state).map_err(self.1)
+    }
+}
+
+struct AndThen<P1, F>(P1, F);
+
+impl<'a, P1, P2, A, F> Parser for AndThen<P1, F>
+where
+    P1: Parser,
+    P2: Parser,
+    F: Fn(P1::Output) -> P2,
+{
+    type Output = A;
+
+    type State = P1::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        self.0.parse(input, location, state).and_then(
+            |cur_input, cur_output, cur_location, cur_state| {
+                self.1(cur_output).parse(cur_input, cur_location, cur_state)
+            },
+        )
+    }
+}
+
+struct Pred<'a, P, F>(P, F, &'a str);
+
+impl<'a, P, A, F> Parser for Pred<'a, P, F>
+where
+    P: Parser,
+    F: Fn(P::Output) -> bool,
+{
+    type Output = A;
+
+    type State = P::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        match self.0.parse(input, location, state) {
+            ParseResult::Ok {
+                input: cur_input,
+                output: content,
+                location: cur_location,
+                state: cur_state,
+                committed: cur_committed,
+            } => {
+                if self.1(&content) {
+                    ParseResult::Ok {
+                        input: cur_input,
+                        output: content,
+                        location: cur_location,
+                        state: cur_state,
+                        committed: true,
+                    }
+                } else {
+                    ParseResult::Err {
+                        message: format!(
+                            "I'm expecting {} but found {}.",
+                            self.2,
+                            display_token(content),
+                        ),
+                        from: location,
+                        to: cur_location,
+                        state: cur_state,
+                        committed: cur_committed,
+                    }
+                }
+            }
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                ..
+            } => ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed: false,
+            },
+        }
+    }
+}
+
+struct Ignore<P>(P);
+
+impl<'a, P, A> Parser for End<P>
+where
+    P: Parser,
+{
+    type Output = A;
+
+    type State = P::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        map(self, |_| ())
+    }
+}
+
+struct UpdateState<P, F>(P, F);
+
+impl<'a, P, A, F> Parser for UpdateState<P, F>
+where
+    P: Parser,
+    F: Fn(Self::State) -> Self::State,
+{
+    type Output = A;
+
+    type State = P::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        match self.0.parse(input, location, state) {
+            ParseResult::Ok {
+                input: cur_input,
+                location: cur_location,
+                state: cur_state,
+                output,
+                committed,
+            } => ParseResult::Ok {
+                input: cur_input,
+                output: output.clone(),
+                location: cur_location,
+                state: self.1(output, cur_state),
+                committed,
+            },
+            err @ ParseResult::Err { .. } => err,
+        }
+    }
+}
+
+struct Update<P, F>(P, F);
+
+impl<'a, P, A, B, F> Parser for Update<P, F>
+where
+    P: Parser,
+    F: Fn(&'a str, Self::Output, Location, Self::State) -> ParseResult<'a, B, Self::State>,
+{
+    type Output = A;
+
+    type State = P::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        match self.0.parse(input, location, state) {
+            ParseResult::Ok {
+                input: cur_input,
+                location: cur_location,
+                state: cur_state,
+                output,
+                ..
+            } => self.1(cur_input, output, cur_location, cur_state),
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            } => ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            },
+        }
+    }
+}
+
+struct End<P>(P);
+
+impl<'a, P, A> Parser for Ignore<P>
+where
+    P: Parser,
+{
+    type Output = A;
+
+    type State = P::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        self.0.update(|input, output, location, state| {
+            if !input.is_empty() {
+                ParseResult::Err {
+                    message: "I'm expecting the end of input.".to_string(),
+                    from: location,
+                    to: location,
+                    state,
+                    committed: false,
+                }
+            } else {
+                ParseResult::Ok {
+                    input,
+                    output,
+                    location,
+                    state,
+                    committed: false,
+                }
+            }
+        })
+    }
+}
+
+struct Keep<P1, P2>(P1, P2);
+
+impl<'a, P1, P2, A, B, F> Parser for Keep<P1, P2>
+where
+    F: Fn(A) -> B,
+    P1: Parser<Output = F>,
+    P2: Parser<Output = A>,
+{
+    type Output = A;
+
+    type State = P1::State;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        map(pair(self.0, self.1), |(func, arg)| func(arg))
+    }
+}
+
+pub trait Parser {
+    type Output;
+
+    type State: Clone;
+
+    /// Parse a given input, starting at
+    /// a given location and state.
+    fn parse<'a>(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State>;
     /// Run the parser on a given input, starting at
     /// the first character.
     ///
@@ -343,22 +684,25 @@ pub trait Parser<'a, Output, State: Clone> {
     ///   .keep(int())
     ///   .run("2, 3", ()); // position == (2, 3)
     /// ```
-    fn run(&self, input: &'a str, state: State) -> ParseResult<'a, Output, State>;
+    fn run<'a>(
+        &self,
+        input: &'a str,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        self.parse(input, Location { row: 1, col: 1 }, state)
+    }
     /// Map the output to a new output if parse succeeds.
     /// Otherwise, return error as usual.
     ///
     /// The only difference from the `map` on `ParseResult`
     /// is that this `map` turns one `Parser` into another while the `map`
     /// on `ParseResult` turns one `ParseResult` into another.
-    fn map<F, NewOutput>(self, map_fn: F) -> BoxedParser<'a, NewOutput, State>
+    fn map<F, NewOutput>(self, map_fn: F) -> Map<Self, F>
     where
-        Self: Sized + 'a,
-        Output: 'a,
-        NewOutput: 'a,
-        State: 'a,
-        F: Fn(Output) -> NewOutput + 'a,
+        Self: Sized,
+        F: Fn(Self::Output) -> NewOutput,
     {
-        BoxedParser::new(map(self, map_fn))
+        map(self, map_fn)
     }
     /// The map function is supplied both the output and the
     /// state of the parser.
@@ -367,15 +711,12 @@ pub trait Parser<'a, Output, State: Clone> {
     /// The only difference from the `map_with_state` on `ParseResult`
     /// is that this `map_with_state` turns one `Parser` into another while the `map_with_state`
     /// on `ParseResult` turns one `ParseResult` into another.
-    fn map_with_state<F, NewOutput>(self, map_fn: F) -> BoxedParser<'a, NewOutput, State>
+    fn map_with_state<F, NewOutput>(self, map_fn: F) -> MapWithState<Self, F>
     where
-        Self: Sized + 'a,
-        Output: 'a,
-        NewOutput: 'a,
-        State: 'a,
-        F: Fn(Output, State) -> NewOutput + 'a,
+        Self: Sized,
+        F: Fn(Self::Output, Self::State) -> NewOutput,
     {
-        BoxedParser::new(map_with_state(self, map_fn))
+        map_with_state(self, map_fn)
     }
     /// Map the error message to a new message if parse fails.
     /// Otherwise, return output as usual.
@@ -383,14 +724,12 @@ pub trait Parser<'a, Output, State: Clone> {
     /// The only difference from the `map_err` on `ParseResult`
     /// is that this `map_err` turns one `Parser` into another while the `map_err`
     /// on `ParseResult` turns one `ParseResult` into another.
-    fn map_err<F>(self, map_fn: F) -> BoxedParser<'a, Output, State>
+    fn map_err<F>(self, map_fn: F) -> MapErr<Self, F>
     where
-        Self: Sized + 'a,
-        Output: 'a,
-        State: 'a,
-        F: Fn(String) -> String + 'a,
+        Self: Sized,
+        F: Fn(String) -> String,
     {
-        BoxedParser::new(map_err(self, map_fn))
+        map_err(self, map_fn)
     }
     /// Returns a new parser which is given the current output if parse succeeds.
     /// Otherwise, return error as usual.
@@ -398,47 +737,38 @@ pub trait Parser<'a, Output, State: Clone> {
     /// The only difference from the `and_then` on `ParseResult`
     /// is that this `and_then` turns one `Parser` into another while the `and_then`
     /// on `ParseResult` turns one `ParseResult` into another.
-    fn and_then<F, NextParser, NewOutput>(self, f: F) -> BoxedParser<'a, NewOutput, State>
+    fn and_then<F, P2, B>(self, f: F) -> AndThen<Self, F>
     where
-        Self: Sized + 'a,
-        Output: 'a,
-        NewOutput: 'a,
-        State: 'a,
-        NextParser: Parser<'a, NewOutput, State> + 'a,
-        F: Fn(Output) -> NextParser + 'a,
+        Self: Sized,
+        P2: Parser<Output = B>,
+        F: Fn(Self::Output) -> P2,
     {
-        BoxedParser::new(and_then(self, f))
+        and_then(self, f)
     }
     /// Judge if the output meets the requirement using a predicate function
     /// if the parse succeeds. Otherwise, return error as usual.
-    fn pred<F>(self, predicate: F, expecting: &'a str) -> BoxedParser<'a, Output, State>
+    fn pred<F>(self, predicate: F, expecting: &str) -> Pred<Self, F>
     where
-        Self: Sized + 'a,
-        Output: std::fmt::Display + 'a,
-        State: 'a,
-        F: Fn(&Output) -> bool + 'a,
+        Self: Sized,
+        F: Fn(&Self::Output) -> bool,
     {
-        BoxedParser::new(pred(self, predicate, expecting))
+        pred(self, predicate, expecting)
     }
     /// Ignore the parse output and return `()` (emtpy tuple)
-    fn ignore(self) -> BoxedParser<'a, (), State>
+    fn ignore(self) -> Ignore<Self>
     where
-        Self: Sized + 'a,
-        Output: 'a,
-        State: 'a,
+        Self: Sized,
     {
-        BoxedParser::new(map(self, |_| ()))
+        Ignore(self)
     }
     /// Update the state given the new output and state of the parse if parse succeeds.
     /// Otherwise, return error as usual.
-    fn update_state<F>(self, f: F) -> BoxedParser<'a, Output, State>
+    fn update_state<F>(self, f: F) -> UpdateState<Self, F>
     where
-        Self: Sized + 'a,
-        State: 'a,
-        Output: Clone + 'a,
-        F: Fn(Output, State) -> State + 'a,
+        Self: Sized,
+        F: Fn(Self::Output, Self::State) -> Self::State,
     {
-        BoxedParser::new(update_state(self, f))
+        update_state(self, f)
     }
     /// Update the result of the parser if parse succeeds.
     /// Otherwise, return error as usual.
@@ -446,15 +776,12 @@ pub trait Parser<'a, Output, State: Clone> {
     /// This is the most general and powerful method of the parser.
     /// Think about using simpler methods like `map` and `map_err` before
     /// choosing `update`.
-    fn update<F, NewOutput>(self, f: F) -> BoxedParser<'a, NewOutput, State>
+    fn update<'a, F, B>(self, f: F) -> Update<Self, F>
     where
-        Self: Sized + 'a,
-        State: 'a,
-        Output: Clone + 'a,
-        NewOutput: Clone + 'a,
-        F: Fn(&'a str, Output, Location, State) -> ParseResult<'a, NewOutput, State> + 'a,
+        Self: Sized,
+        F: Fn(&'a str, Self::Output, Location, Self::State) -> ParseResult<'a, B, Self::State>,
     {
-        BoxedParser::new(update(self, f))
+        update(self, f)
     }
     /// Check if you have reached the end of the input you are parsing.
     ///
@@ -470,13 +797,11 @@ pub trait Parser<'a, Output, State: Clone> {
     ///   "abcd", "I'm expecting the end of input.",
     /// );
     /// ```
-    fn end(self) -> BoxedParser<'a, Output, State>
+    fn end(self) -> End<Self>
     where
-        Self: Sized + 'a,
-        Output: Clone + 'a,
-        State: 'a,
+        Self: Sized,
     {
-        BoxedParser::new(end(self))
+        end(self)
     }
     /// Keep values in a parser pipeline.
     ///
@@ -492,16 +817,12 @@ pub trait Parser<'a, Output, State: Clone> {
     ///   .keep(int())
     ///   .run("2, 3", ()); // position == (2, 3)
     /// ```
-    fn keep<A, B, ArgParser>(self, arg_parser: ArgParser) -> BoxedParser<'a, B, State>
+    fn keep<A, B, P2>(self, arg_parser: P2) -> Keep<Self, P2>
     where
-        Self: Sized + 'a,
-        A: 'a,
-        B: 'a,
-        State: 'a,
-        Output: FnOnce(A) -> B + 'a,
-        ArgParser: Parser<'a, A, State> + 'a,
+        Self: Sized,
+        P2: Parser,
     {
-        BoxedParser::new(keep(self, arg_parser))
+        keep(self, arg_parser)
     }
     /// Skip values in a parser pipeline.
     ///
@@ -538,86 +859,13 @@ pub trait Parser<'a, Output, State: Clone> {
     }
 }
 
-impl<'a, F, Output, State: 'a> Parser<'a, Output, State> for F
+fn and_then<'a, P1, P2, F>(parser: P1, f: F) -> AndThen<P1, F>
 where
-    F: Fn(&'a str, Location, State) -> ParseResult<'a, Output, State>,
-    State: Clone,
+    P1: Parser,
+    P2: Parser,
+    F: Fn(P1::Output) -> P2,
 {
-    fn parse(
-        &self,
-        input: &'a str,
-        location: Location,
-        state: State,
-    ) -> ParseResult<'a, Output, State> {
-        self(input, location, state)
-    }
-    fn run(&self, input: &'a str, state: State) -> ParseResult<'a, Output, State> {
-        self(input, Location { row: 1, col: 1 }, state)
-    }
-}
-
-impl<'a, Output: 'a, State: 'a> Clone for BoxedParser<'a, Output, State> {
-    fn clone(&self) -> Self {
-        BoxedParser {
-            parser: self.parser.clone(),
-        }
-    }
-}
-
-/// Box `Parser` trait so its size is decidable in compile time.
-///
-/// Essentially allocate the `Parser` on the heap in runtime.
-/// Makes passing `Parser` around much easier because types that `impl trait`
-/// may be different under the hood while `BoxedParser` is always a pointer
-/// to a place in the heap.
-pub struct BoxedParser<'a, Output, State> {
-    parser: Rc<dyn Parser<'a, Output, State> + 'a>,
-}
-
-impl<'a, Output, State> BoxedParser<'a, Output, State> {
-    /// Box any type that implements the `Parser` trait
-    pub fn new<P>(parser: P) -> Self
-    where
-        P: Parser<'a, Output, State> + 'a,
-        State: Clone,
-    {
-        BoxedParser {
-            parser: Rc::new(parser),
-        }
-    }
-}
-
-impl<'a, Output, State> Parser<'a, Output, State> for BoxedParser<'a, Output, State>
-where
-    State: Clone,
-{
-    fn parse(
-        &self,
-        input: &'a str,
-        location: Location,
-        state: State,
-    ) -> ParseResult<'a, Output, State> {
-        self.parser.parse(input, location, state)
-    }
-    fn run(&self, input: &'a str, state: State) -> ParseResult<'a, Output, State> {
-        self.parser.run(input, state)
-    }
-}
-
-fn and_then<'a, P, F, A, B, S: Clone + 'a, NextP>(parser: P, f: F) -> impl Parser<'a, B, S>
-where
-    P: Parser<'a, A, S>,
-    NextP: Parser<'a, B, S>,
-    F: Fn(A) -> NextP,
-    S: Clone,
-{
-    move |input, location, state| {
-        parser.parse(input, location, state).and_then(
-            |cur_input, cur_output, cur_location, cur_state: S| {
-                f(cur_output).parse(cur_input, cur_location, cur_state)
-            },
-        )
-    }
+    AndThen(parser, f)
 }
 
 /// Parse a given token string.
@@ -696,68 +944,28 @@ where
     }
 }
 
-fn map<'a, P: 'a, F: 'a, A, B, S: Clone + 'a>(parser: P, map_fn: F) -> BoxedParser<'a, B, S>
+fn map<'a, P, F, B>(parser: P, map_fn: F) -> Map<P, F>
 where
-    P: Parser<'a, A, S>,
-    F: Fn(A) -> B,
+    P: Parser,
+    F: Fn(P::Output) -> B,
 {
-    BoxedParser::new(move |input, location, state| {
-        parser
-            .parse(input, location, state)
-            .map(|output| map_fn(output))
-    })
+    Map(parser, map_fn)
 }
 
-fn map_with_state<'a, P: 'a, F: 'a, A, B, S: Clone + 'a>(
-    parser: P,
-    map_fn: F,
-) -> BoxedParser<'a, B, S>
+fn map_with_state<'a, P: 'a, F: 'a, A, B, S: Clone + 'a>(parser: P, map_fn: F) -> MapWithState<P, F>
 where
-    P: Parser<'a, A, S>,
-    F: Fn(A, S) -> B,
+    P: Parser,
+    F: Fn(P::Output, P::State) -> B,
 {
-    BoxedParser::new(
-        move |input, location, state: S| match parser.parse(input, location, state) {
-            ParseResult::Ok {
-                input,
-                output,
-                location,
-                state,
-                committed,
-            } => ParseResult::Ok {
-                input,
-                output: map_fn(output, state.clone()),
-                location,
-                state,
-                committed,
-            },
-            ParseResult::Err {
-                message,
-                from,
-                to,
-                state,
-                committed,
-            } => ParseResult::Err {
-                message,
-                from,
-                to,
-                state,
-                committed,
-            },
-        },
-    )
+    MapWithState(parser, map_fn)
 }
 
-fn map_err<'a, P, F, A, S: Clone + 'a>(parser: P, map_fn: F) -> impl Parser<'a, A, S>
+fn map_err<'a, P, F>(parser: P, map_fn: F) -> MapErr<P, F>
 where
-    P: Parser<'a, A, S>,
+    P: Parser,
     F: Fn(String) -> String,
 {
-    move |input, location, state| {
-        parser
-            .parse(input, location, state)
-            .map_err(|error_message| map_fn(error_message))
-    }
+    MapErr(parser, map_fn)
 }
 
 fn backtrackable<'a, P: 'a, A, S: Clone + 'a>(parser: P) -> impl Parser<'a, A, S>
@@ -779,16 +987,13 @@ where
     map(pair(parser1, parser2), |(left, _right)| left)
 }
 
-fn keep<'a, P1: 'a, P2: 'a, F: 'a, A: 'a, B: 'a, S: Clone + 'a>(
-    parser1: P1,
-    parser2: P2,
-) -> BoxedParser<'a, B, S>
+fn keep<P1, P2, F, A, B>(parser1: P1, parser2: P2) -> Keep<P1, P2>
 where
     F: FnOnce(A) -> B,
-    P1: Parser<'a, F, S>,
-    P2: Parser<'a, A, S>,
+    P1: Parser<Output = F>,
+    P2: Parser<Output = A>,
 {
-    map(pair(parser1, parser2), |(func, arg)| func(arg))
+    Keep(parser1, parser2)
 }
 
 #[doc(hidden)]
@@ -1274,29 +1479,11 @@ where
     }
 }
 
-fn end<'a, P: 'a, A: Clone + 'a, S: Clone + 'a>(parser: P) -> impl Parser<'a, A, S>
+fn end<'a, P>(parser: P) -> End<P>
 where
-    P: Parser<'a, A, S>,
+    P: Parser,
 {
-    parser.update(|input, output, location, state| {
-        if !input.is_empty() {
-            ParseResult::Err {
-                message: "I'm expecting the end of input.".to_string(),
-                from: location,
-                to: location,
-                state,
-                committed: false,
-            }
-        } else {
-            ParseResult::Ok {
-                input,
-                output,
-                location,
-                state,
-                committed: false,
-            }
-        }
-    })
+    End(parser)
 }
 
 /// Run the parser zero or more times and combine each output into a vector of outputs.
@@ -1554,59 +1741,16 @@ fn get_difference<'a>(whole_str: &'a str, substr: &'a str) -> &'a str {
     &whole_str[..whole_str.len() - substr.len()]
 }
 
-fn pred<'a, P, F, A: std::fmt::Display, S: Clone + 'a>(
+fn pred<'a, P, F, A, S: Clone + 'a>(
     parser: P,
     predicate: F,
     expecting: &'a str,
 ) -> impl Parser<'a, A, S>
 where
-    P: Parser<'a, A, S>,
+    P: Parser,
     F: Fn(&A) -> bool,
 {
-    move |input, location, state: S| match parser.parse(input, location, state) {
-        ParseResult::Ok {
-            input: cur_input,
-            output: content,
-            location: cur_location,
-            state: cur_state,
-            committed: cur_committed,
-        } => {
-            if predicate(&content) {
-                ParseResult::Ok {
-                    input: cur_input,
-                    output: content,
-                    location: cur_location,
-                    state: cur_state,
-                    committed: true,
-                }
-            } else {
-                ParseResult::Err {
-                    message: format!(
-                        "I'm expecting {} but found {}.",
-                        expecting,
-                        display_token(content),
-                    ),
-                    from: location,
-                    to: cur_location,
-                    state: cur_state,
-                    committed: cur_committed,
-                }
-            }
-        }
-        ParseResult::Err {
-            message,
-            from,
-            to,
-            state,
-            ..
-        } => ParseResult::Err {
-            message,
-            from,
-            to,
-            state,
-            committed: false,
-        },
-    }
+    Pred(parser, predicate)
 }
 
 /// Parse a single space character.
@@ -2244,56 +2388,20 @@ pub fn display_error(source: &str, error_message: String, from: Location, to: Lo
     error_line + "\n" + &error_pointer + "\n" + "⚠️ " + &error_message
 }
 
-fn update_state<'a, P, A: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl Parser<'a, A, S>
+fn update_state<'a, P, A, F>(parser: P, f: F) -> impl Parser<'a, A, S>
 where
-    P: Parser<'a, A, S>,
-    F: Fn(A, S) -> S,
+    P: Parser,
+    F: Fn(P::Output, P::State) -> P::State,
 {
-    move |input, location, state| match parser.parse(input, location, state) {
-        ParseResult::Ok {
-            input: cur_input,
-            location: cur_location,
-            state: cur_state,
-            output,
-            committed,
-        } => ParseResult::Ok {
-            input: cur_input,
-            output: output.clone(),
-            location: cur_location,
-            state: f(output, cur_state),
-            committed,
-        },
-        err @ ParseResult::Err { .. } => err,
-    }
+    UpdateState(parser, f)
 }
 
-fn update<'a, P, A: Clone, B: Clone, S: Clone + 'a, F>(parser: P, f: F) -> impl Parser<'a, B, S>
+fn update<'a, P, A, B, F>(parser: P, f: F) -> Update<P, F>
 where
-    P: Parser<'a, A, S>,
-    F: Fn(&'a str, A, Location, S) -> ParseResult<'a, B, S>,
+    P: Parser,
+    F: Fn(&'a str, A, Location, P::State) -> ParseResult<'a, B, P::State>,
 {
-    move |input, location, state| match parser.parse(input, location, state) {
-        ParseResult::Ok {
-            input: cur_input,
-            location: cur_location,
-            state: cur_state,
-            output,
-            ..
-        } => f(cur_input, output, cur_location, cur_state),
-        ParseResult::Err {
-            message,
-            from,
-            to,
-            state,
-            committed,
-        } => ParseResult::Err {
-            message,
-            from,
-            to,
-            state,
-            committed,
-        },
-    }
+    Update(parser, f)
 }
 
 #[doc(hidden)]
