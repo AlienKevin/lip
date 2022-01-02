@@ -1730,7 +1730,8 @@ fn plural_suffix(count: usize) -> &'static str {
     }
 }
 
-fn repeat<'a, A, P, S: Clone + 'a>(times: usize, parser: P) -> impl Parser<'a, Vec<A>, S>
+/// Repeat a parser n times
+pub fn repeat<'a, A, P, S: Clone + 'a>(times: usize, parser: P) -> impl Parser<'a, Vec<A>, S>
 where
     P: Parser<'a, A, S>,
 {

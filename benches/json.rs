@@ -89,15 +89,12 @@ fn string<'a>() -> BoxedParser<'a, String, ()> {
                     token("n").map(|_| '\n'),
                     token("r").map(|_| '\r'),
                     token("t").map(|_| '\t'),
-                    succeed!(|d1, d2, d3, d4| {
-                        let c: String = [d1, d2, d3, d4].iter().collect();
+                    succeed!(|digits: Vec<char>| {
+                        let c: String = digits.iter().collect();
                         char::from_u32(u32::from_str_radix(&c, 16).unwrap()).unwrap()
                     })
                     .skip(token("u"))
-                    .keep(hex_digit())
-                    .keep(hex_digit())
-                    .keep(hex_digit())
-                    .keep(hex_digit())
+                    .keep(repeat(4, hex_digit()))
                 ))
             ),
             "a closing `\"`",
