@@ -320,7 +320,7 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
 
 struct Map<P, F>(P, F);
 
-impl<'a, A, B, P, F> Parser for Map<P, F>
+impl<A, B, P, F> Parser for Map<P, F>
 where
     P: Parser<Output = A>,
     F: Fn(A) -> B,
@@ -329,7 +329,7 @@ where
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -341,16 +341,16 @@ where
 
 struct MapWithState<P, F>(P, F);
 
-impl<'a, A, B, P, F> Parser for MapWithState<P, F>
+impl<A, B, P, F> Parser for MapWithState<P, F>
 where
     P: Parser<Output = A>,
-    F: Fn(A, Self::State) -> B,
+    F: Fn(A, P::State) -> B,
 {
     type Output = B;
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -389,16 +389,16 @@ where
 
 struct MapErr<P, F>(P, F);
 
-impl<'a, P, A, F> Parser for MapErr<P, F>
+impl<P, F> Parser for MapErr<P, F>
 where
     P: Parser,
     F: Fn(String) -> String,
 {
-    type Output = A;
+    type Output = P::Output;
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -410,17 +410,17 @@ where
 
 struct AndThen<P1, F>(P1, F);
 
-impl<'a, P1, P2, A, F> Parser for AndThen<P1, F>
+impl<P1, P2, F> Parser for AndThen<P1, F>
 where
     P1: Parser,
     P2: Parser,
     F: Fn(P1::Output) -> P2,
 {
-    type Output = A;
+    type Output = P1::Output;
 
     type State = P1::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -436,21 +436,21 @@ where
 
 struct Pred<'a, P, F>(P, F, &'a str);
 
-impl<'a, P, A, F> Parser for Pred<'a, P, F>
+impl<'a, P, F> Parser for Pred<'a, P, F>
 where
     P: Parser,
     F: Fn(P::Output) -> bool,
 {
-    type Output = A;
+    type Output = P::Output;
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'b>(
         &self,
-        input: &'a str,
+        input: &'b str,
         location: Location,
         state: Self::State,
-    ) -> ParseResult<'a, Self::Output, Self::State> {
+    ) -> ParseResult<'b, Self::Output, Self::State> {
         match self.0.parse(input, location, state) {
             ParseResult::Ok {
                 input: cur_input,
@@ -500,15 +500,15 @@ where
 
 struct Ignore<P>(P);
 
-impl<'a, P, A> Parser for End<P>
+impl<P> Parser for End<P>
 where
     P: Parser,
 {
-    type Output = A;
+    type Output = P::Output;
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -520,16 +520,16 @@ where
 
 struct UpdateState<P, F>(P, F);
 
-impl<'a, P, A, F> Parser for UpdateState<P, F>
+impl<P, F> Parser for UpdateState<P, F>
 where
     P: Parser,
-    F: Fn(Self::State) -> Self::State,
+    F: Fn(P::State) -> P::State,
 {
-    type Output = A;
+    type Output = P::Output;
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -556,21 +556,21 @@ where
 
 struct Update<P, F>(P, F);
 
-impl<'a, P, A, B, F> Parser for Update<P, F>
+impl<'a, P, A, F> Parser for Update<P, F>
 where
-    P: Parser,
-    F: Fn(&'a str, Self::Output, Location, Self::State) -> ParseResult<'a, B, Self::State>,
+    P: Parser<Output = A>,
+    F: Fn(&'a str, A, Location, P::State) -> ParseResult<'a, A, P::State>,
 {
-    type Output = A;
+    type Output = P::Output;
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'b>(
         &self,
-        input: &'a str,
+        input: &'b str,
         location: Location,
         state: Self::State,
-    ) -> ParseResult<'a, Self::Output, Self::State> {
+    ) -> ParseResult<'b, Self::Output, Self::State> {
         match self.0.parse(input, location, state) {
             ParseResult::Ok {
                 input: cur_input,
@@ -598,45 +598,27 @@ where
 
 struct End<P>(P);
 
-impl<'a, P, A> Parser for Ignore<P>
+impl<P> Parser for Ignore<P>
 where
     P: Parser,
 {
-    type Output = A;
+    type Output = ();
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        self.0.update(|input, output, location, state| {
-            if !input.is_empty() {
-                ParseResult::Err {
-                    message: "I'm expecting the end of input.".to_string(),
-                    from: location,
-                    to: location,
-                    state,
-                    committed: false,
-                }
-            } else {
-                ParseResult::Ok {
-                    input,
-                    output,
-                    location,
-                    state,
-                    committed: false,
-                }
-            }
-        })
+        map(self, |_| ())
     }
 }
 
 struct Keep<P1, P2>(P1, P2);
 
-impl<'a, P1, P2, A, B, F> Parser for Keep<P1, P2>
+impl<P1, P2, A, B, F> Parser for Keep<P1, P2>
 where
     F: Fn(A) -> B,
     P1: Parser<Output = F>,
@@ -646,7 +628,7 @@ where
 
     type State = P1::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -658,16 +640,16 @@ where
 
 struct Skip<P1, P2>(P1, P2);
 
-impl<'a, A, P1, P2> Parser for Skip<P1, P2>
+impl<P1, P2> Parser for Skip<P1, P2>
 where
     P1: Parser,
     P2: Parser,
 {
-    type Output = A;
+    type Output = P1::Output;
 
     type State = P1::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -679,15 +661,15 @@ where
 
 struct Backtrackable<P>(P);
 
-impl<'a, A, P> Parser for Backtrackable<P>
+impl<P> Parser for Backtrackable<P>
 where
     P: Parser,
 {
-    type Output = A;
+    type Output = P::Output;
 
     type State = P::State;
 
-    fn parse(
+    fn parse<'a>(
         &self,
         input: &'a str,
         location: Location,
@@ -1086,10 +1068,7 @@ where
 }
 
 /// Run the left parser, then the right, last keep the right result and discard the left.
-fn right<P1, P2, R1, R2>(
-    parser1: P1,
-    parser2: P2,
-) -> impl Parser<Output = R2>
+fn right<P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<Output = R2>
 where
     P1: Parser<Output = R1>,
     P2: Parser<Output = R2>,
@@ -1777,16 +1756,16 @@ fn get_difference<'a>(whole_str: &'a str, substr: &'a str) -> &'a str {
     &whole_str[..whole_str.len() - substr.len()]
 }
 
-fn pred<'a, P, F, A, S: Clone + 'a>(
+fn pred<'a, P, F, A>(
     parser: P,
     predicate: F,
     expecting: &'a str,
-) -> impl Parser<'a, A, S>
+) -> impl Parser<Output = A>
 where
     P: Parser,
     F: Fn(&A) -> bool,
 {
-    Pred(parser, predicate)
+    Pred(parser, predicate, expecting)
 }
 
 /// Parse a single space character.
