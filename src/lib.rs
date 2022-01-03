@@ -404,16 +404,16 @@ impl<'a, T, S: Clone> ParseResult<'a, T, S> {
 
 struct Map<P, F>(P, F);
 
-impl<A, B, P, F> Parser for Map<P, F>
+impl<'a, A, B, P, F> Parser<'a> for Map<P, F>
 where
-    P: Parser<Output = A>,
+    P: Parser<'a, Output = A>,
     F: Fn(A) -> B,
 {
     type Output = B;
 
     type State = P::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -425,16 +425,16 @@ where
 
 struct MapWithState<P, F>(P, F);
 
-impl<A, B, P, F> Parser for MapWithState<P, F>
+impl<'a, A, B, P, F> Parser<'a> for MapWithState<P, F>
 where
-    P: Parser<Output = A>,
+    P: Parser<'a, Output = A>,
     F: Fn(A, P::State) -> B,
 {
     type Output = B;
 
     type State = P::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -473,16 +473,16 @@ where
 
 struct MapErr<P, F>(P, F);
 
-impl<P, F> Parser for MapErr<P, F>
+impl<'a, P, F> Parser<'a> for MapErr<P, F>
 where
-    P: Parser,
+    P: Parser<'a>,
     F: Fn(String) -> String,
 {
     type Output = P::Output;
 
     type State = P::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -494,17 +494,17 @@ where
 
 struct AndThen<P1, F>(P1, F);
 
-impl<P1, P2, F> Parser for AndThen<P1, F>
+impl<'a, P1, P2, F> Parser<'a> for AndThen<P1, F>
 where
-    P1: Parser,
-    P2: Parser,
+    P1: Parser<'a>,
+    P2: Parser<'a>,
     F: Fn(P1::Output) -> P2,
 {
     type Output = P1::Output;
 
     type State = P1::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -520,9 +520,9 @@ where
 
 struct Pred<'a, P, F>(P, F, &'a str);
 
-impl<'a, P, F> Parser for Pred<'a, P, F>
+impl<'a, P, F> Parser<'a> for Pred<'a, P, F>
 where
-    P: Parser,
+    P: Parser<'a>,
     F: Fn(P::Output) -> bool,
 {
     type Output = P::Output;
@@ -584,15 +584,15 @@ where
 
 struct End<P>(P);
 
-impl<P> Parser for End<P>
+impl<'a, P> Parser<'a> for End<P>
 where
-    P: Parser,
+    P: Parser<'a>,
 {
     type Output = P::Output;
 
     type State = P::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -622,16 +622,16 @@ where
 
 struct UpdateState<P, F>(P, F);
 
-impl<P, F> Parser for UpdateState<P, F>
+impl<'a, P, F> Parser<'a> for UpdateState<P, F>
 where
-    P: Parser,
+    P: Parser<'a>,
     F: Fn(P::State) -> P::State,
 {
     type Output = P::Output;
 
     type State = P::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -658,9 +658,9 @@ where
 
 struct Update<P, F>(P, F);
 
-impl<'a, P, A, F> Parser for Update<P, F>
+impl<'a, P, A, F> Parser<'a> for Update<P, F>
 where
-    P: Parser<Output = A>,
+    P: Parser<'a, Output = A>,
     F: Fn(&'a str, A, Location, P::State) -> ParseResult<'a, A, P::State>,
 {
     type Output = P::Output;
@@ -700,15 +700,15 @@ where
 
 struct Ignore<P>(P);
 
-impl<P> Parser for Ignore<P>
+impl<'a, P> Parser<'a> for Ignore<P>
 where
-    P: Parser,
+    P: Parser<'a>,
 {
     type Output = ();
 
     type State = P::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -720,17 +720,17 @@ where
 
 struct Keep<P1, P2>(P1, P2);
 
-impl<P1, P2, A, B, F> Parser for Keep<P1, P2>
+impl<P1, P2, A, B, F> Parser<'a> for Keep<P1, P2>
 where
     F: Fn(A) -> B,
     P1: Parser<Output = F>,
-    P2: Parser<Output = A>,
+    P2: Parser<'a, Output = A>,
 {
     type Output = A;
 
     type State = P1::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -742,7 +742,7 @@ where
 
 struct Skip<P1, P2>(P1, P2);
 
-impl<P1, P2> Parser for Skip<P1, P2>
+impl<P1, P2> Parser<'a> for Skip<P1, P2>
 where
     P1: Parser,
     P2: Parser,
@@ -751,7 +751,7 @@ where
 
     type State = P1::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -763,7 +763,7 @@ where
 
 struct Backtrackable<P>(P);
 
-impl<P> Parser for Backtrackable<P>
+impl<P> Parser<'a> for Backtrackable<P>
 where
     P: Parser,
 {
@@ -771,7 +771,7 @@ where
 
     type State = P::State;
 
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -781,14 +781,14 @@ where
     }
 }
 
-pub trait Parser {
+pub trait Parser<'a> {
     type Output;
 
     type State: Clone;
 
     /// Parse a given input, starting at
     /// a given location and state.
-    fn parse<'a>(
+    fn parse(
         &self,
         input: &'a str,
         location: Location,
@@ -809,7 +809,7 @@ pub trait Parser {
     ///   .keep(int())
     ///   .run("2, 3", ()); // position == (2, 3)
     /// ```
-    fn run<'a>(
+    fn run(
         &self,
         input: &'a str,
         state: Self::State,
@@ -1001,7 +1001,7 @@ where
     FnParser(f)
 }
 
-impl<'a, A, S, F> Parser for FnParser<F, A, S>
+impl<'a, A, S, F> Parser<'a> for FnParser<F, A, S>
 where
     F: Fn(&'a str, Location, S) -> ParseResult<'a, A, S>,
     S: Clone,
@@ -1009,7 +1009,7 @@ where
     type Output = A;
     type State = S;
 
-    fn parse<'b>(&self, input: &'b str, location: Location, state: S) -> ParseResult<'b, A, S> {
+    fn parse(&self, input: &'a str, location: Location, state: S) -> ParseResult<'a, A, S> {
         (self.0)(input, location, state)
     }
 }
@@ -1137,7 +1137,7 @@ fn keep<P1, P2, F, A, B>(parser1: P1, parser2: P2) -> Keep<P1, P2>
 where
     F: FnOnce(A) -> B,
     P1: Parser<Output = F>,
-    P2: Parser<Output = A>,
+    P2: Parser<'a, Output = A>,
 {
     Keep(parser1, parser2)
 }
@@ -1746,17 +1746,15 @@ fn any_char<S: Clone>(expecting: &'static str) -> impl Parser<Output = char, Sta
 }
 
 /// Chomp one grapheme if it passes the test.
-pub fn chomp_if<'a, F, S: Clone>(predicate: F, expecting: &'a str) -> impl Parser<Output = ()>
+pub fn chomp_if<'a, F>(predicate: F, expecting: &'a str) -> impl Parser<Output = ()>
 where
     F: Fn(&str) -> bool,
 {
-    any_grapheme(expecting)
-        .pred(move |s| predicate(s), expecting)
-        .ignore()
+    any_grapheme(expecting).pred(predicate, expecting).ignore()
 }
 
 /// Chomp one character if it passes the test.
-pub fn chomp_ifc<F, S: Clone>(predicate: F, expecting: &'static str) -> impl Parser<Output = ()>
+pub fn chomp_ifc<F>(predicate: F, expecting: &'static str) -> impl Parser<Output = ()>
 where
     F: Fn(&char) -> bool,
 {
@@ -1764,10 +1762,7 @@ where
 }
 
 /// Chomp zero or more graphemes if they pass the test.
-pub fn chomp_while0<'a, F, S: Clone>(
-    predicate: F,
-    expecting: &'a str,
-) -> impl Parser<Output = (), State = S>
+pub fn chomp_while0<'a, F>(predicate: F, expecting: &'a str) -> impl Parser<Output = ()>
 where
     F: Fn(&str) -> bool,
 {
@@ -1784,10 +1779,7 @@ where
 /// }
 /// ```
 /// See [variable](fn.variable.html) for how this can be used to chomp variable names.
-pub fn chomp_while0c<'a, F: 'a, S: Clone + 'a>(
-    predicate: F,
-    expecting: &'a str,
-) -> impl Parser<Output = ()>
+pub fn chomp_while0c<'a, F>(predicate: F, expecting: &'a str) -> impl Parser<Output = ()>
 where
     F: Fn(&char) -> bool,
 {
@@ -1795,10 +1787,7 @@ where
 }
 
 /// Chomp one or more graphemes if they pass the test.
-pub fn chomp_while1<'a, F: 'a, S: Clone + 'a>(
-    predicate: F,
-    expecting: &'a str,
-) -> impl Parser<Output = ()>
+pub fn chomp_while1<'a, F>(predicate: F, expecting: &'a str) -> impl Parser<Output = ()>
 where
     F: Fn(&str) -> bool,
 {
@@ -1818,10 +1807,7 @@ where
 /// }
 /// ```
 /// See [digits](fn.digits.html) for a more complete digits parser with leading zero checks.
-pub fn chomp_while1c<'a, F: 'a, S: Clone + 'a>(
-    predicate: F,
-    expecting: &'a str,
-) -> impl Parser<Output = ()>
+pub fn chomp_while1c<'a, F>(predicate: F, expecting: &'a str) -> impl Parser<Output = ()>
 where
     F: Fn(&char) -> bool,
 {
@@ -2006,7 +1992,7 @@ fn plural_suffix(count: usize) -> &'static str {
 /// Repeat a parser n times
 pub fn repeat<'a, A, P>(times: usize, parser: P) -> impl Parser<Output = Vec<A>>
 where
-    P: Parser<Output = A>,
+    P: Parser<'a, Output = A>,
 {
     move |mut input, mut location, mut state| {
         let mut output = Vec::new();
@@ -2103,7 +2089,7 @@ where
 /// Optionally parse something. Returns supplied default value if parse failed.
 pub fn optional_with_default<A: Clone, P>(default: A, parser: P) -> impl Parser<Output = A>
 where
-    P: Parser<Output = A>,
+    P: Parser<'a, Output = A>,
 {
     either(parser, move |input, location, state| ParseResult::Ok {
         input,
@@ -2117,7 +2103,7 @@ where
 /// Optionally parse something.
 pub fn optional<'a, A, P>(parser: P) -> impl Parser<Output = Option<A>>
 where
-    P: Parser<Output = A>,
+    P: Parser<'a, Output = A>,
 {
     either(parser.map(Some), move |input, location, state| {
         ParseResult::Ok {
@@ -2394,8 +2380,8 @@ pub fn sequence<'a, A: Clone, ItemParser, SpacesParser>(
     trailing: Trailing,
 ) -> impl Parser<Output = Vec<A>>
 where
-    ItemParser: Parser<Output = A>,
-    SpacesParser: Parser<Output = ()>,
+    ItemParser: Parser<'a, Output = A>,
+    SpacesParser: Parser<Output = ()> + Clone,
 {
     wrap(
         pair(token(start), spaces.clone()),
@@ -2437,7 +2423,7 @@ fn wrap<A, B, C, P1, P2, P3>(
     right_delimiter: P3,
 ) -> impl Parser<Output = B>
 where
-    P1: Parser<Output = A>,
+    P1: Parser<'a, Output = A>,
     P2: Parser<Output = B>,
     P3: Parser<Output = C>,
 {
@@ -2450,7 +2436,7 @@ where
 /// of the parsed output for later error messaging or text processing.
 pub fn located<P, A>(parser: P) -> impl Parser<Output = Located<A>>
 where
-    P: Parser<Output = A>,
+    P: Parser<'a, Output = A>,
 {
     move |input, location, state| match parser.parse(input, location, state) {
         ParseResult::Ok {
