@@ -9,7 +9,7 @@ mod tests;
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::fmt::*;
+use std::fmt::{Debug, Display};
 use unicode_segmentation::UnicodeSegmentation as Uni;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -107,6 +107,90 @@ pub enum ParseResult<'a, Output, State> {
         state: State,
         committed: bool,
     },
+}
+
+pub struct ParseOk<'a, Output, State> {
+    input: &'a str,
+    output: Output,
+    location: Location,
+    state: State,
+    committed: bool,
+}
+
+pub struct ParseErr<State> {
+    message: String,
+    from: Location,
+    to: Location,
+    state: State,
+    committed: bool,
+}
+
+pub type StdParseResult<'a, A, S> = Result<ParseOk<'a, A, S>, ParseErr<S>>;
+
+impl<'a, A, S> Into<StdParseResult<'a, A, S>> for ParseResult<'a, A, S> {
+    fn into(self) -> StdParseResult<'a, A, S> {
+        match self {
+            ParseResult::Ok {
+                input,
+                location,
+                output,
+                state,
+                committed,
+            } => Ok(ParseOk {
+                input,
+                location,
+                output,
+                state,
+                committed,
+            }),
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            } => Err(ParseErr {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            }),
+        }
+    }
+}
+
+impl<'a, A, S> From<StdParseResult<'a, A, S>> for ParseResult<'a, A, S> {
+    fn from(result: StdParseResult<'a, A, S>) -> ParseResult<'a, A, S> {
+        match result {
+            Ok(ParseOk {
+                input,
+                location,
+                output,
+                state,
+                committed,
+            }) => ParseResult::Ok {
+                input,
+                location,
+                output,
+                state,
+                committed,
+            },
+            Err(ParseErr {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            }) => ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            },
+        }
+    }
 }
 
 impl<'a, T, S: Clone> ParseResult<'a, T, S> {
@@ -498,7 +582,7 @@ where
     }
 }
 
-struct Ignore<P>(P);
+struct End<P>(P);
 
 impl<P> Parser for End<P>
 where
@@ -514,7 +598,25 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        map(self, |_| ())
+        self.0.update(|input, output, location, state| {
+            if !input.is_empty() {
+                ParseResult::Err {
+                    message: "I'm expecting the end of input.".to_string(),
+                    from: location,
+                    to: location,
+                    state,
+                    committed: false,
+                }
+            } else {
+                ParseResult::Ok {
+                    input,
+                    output,
+                    location,
+                    state,
+                    committed: false,
+                }
+            }
+        })
     }
 }
 
@@ -596,7 +698,7 @@ where
     }
 }
 
-struct End<P>(P);
+struct Ignore<P>(P);
 
 impl<P> Parser for Ignore<P>
 where
@@ -612,7 +714,7 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        map(self, |_| ())
+        map(self, |_| ()).parse(input, location, state)
     }
 }
 
@@ -886,11 +988,37 @@ where
     AndThen(parser, f)
 }
 
+use std::marker::PhantomData;
+
+#[derive(Copy, Clone)]
+pub struct FnParser<F, A, S>(F, PhantomData<A>, PhantomData<S>);
+
+pub fn fn_parser<'a, A, S, F>(f: F) -> FnParser<F, A, S>
+where
+    F: Fn(&'a str, Location, S) -> ParseResult<'a, A, S>,
+    S: Clone,
+{
+    FnParser(f)
+}
+
+impl<'a, A, S, F> Parser for FnParser<F, A, S>
+where
+    F: Fn(&'a str, Location, S) -> ParseResult<'a, A, S>,
+    S: Clone,
+{
+    type Output = A;
+    type State = S;
+
+    fn parse<'b>(&self, input: &'b str, location: Location, state: S) -> ParseResult<'b, A, S> {
+        (self.0)(input, location, state)
+    }
+}
+
 /// Parse a given token string.
 ///
 /// ⚠️ Newlines are not allowed in tokens.
-pub fn token<'a>(expected: &'static str) -> impl Parser {
-    move |input: &'a str, location: Location, state| {
+pub fn token<S: Clone>(expected: &'static str) -> impl Parser<Output = &'static str, State = S> {
+    fn_parser(move |input: &str, location: Location, state: S| {
         let peek = input.get(0..expected.len());
         if peek == Some(expected) {
             ParseResult::Ok {
@@ -918,7 +1046,7 @@ pub fn token<'a>(expected: &'static str) -> impl Parser {
                 committed: false,
             }
         }
-    }
+    })
 }
 
 fn increment_col(additional_col: usize, location: Location) -> Location {
@@ -946,23 +1074,23 @@ fn display_token<T: Display>(token: T) -> String {
 
 /// Pair up two parsers. Run the left parser, then the right,
 /// and last combine both outputs into a tuple.
-fn pair<'a, P1, P2, R1, R2, S: Clone + 'a>(
+fn pair<'a, P1, P2, R1, R2, S: Clone>(
     parser1: P1,
     parser2: P2,
-) -> impl Parser<Output = (R1, R2)>
+) -> impl Parser<Output = (R1, R2), State = S>
 where
-    P1: Parser<Output = R1>,
-    P2: Parser<Output = R2>,
+    P1: Parser<Output = R1, State = S>,
+    P2: Parser<Output = R2, State = S>,
 {
-    move |input, location, state| {
+    fn_parser(move |input, location, state| {
         parser1.parse(input, location, state).and_then(
-            |cur_input, first_output, cur_location, cur_state: S| {
+            |cur_input, first_output, cur_location, cur_state| {
                 parser2
                     .parse(cur_input, cur_location, cur_state)
                     .map(|second_output| (first_output, second_output))
             },
         )
-    }
+    })
 }
 
 fn map<'a, P, F, B>(parser: P, map_fn: F) -> Map<P, F>
@@ -997,10 +1125,10 @@ where
 }
 
 /// Run the left parser, then the right, last keep the left result and discard the right.
-fn left<P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<Output = R1>
+fn left<P1, P2, R1, R2, S: Clone>(parser1: P1, parser2: P2) -> impl Parser<Output = R1, State = S>
 where
-    P1: Parser<Output = R1>,
-    P2: Parser<Output = R2>,
+    P1: Parser<Output = R1, State = S>,
+    P2: Parser<Output = R2, State = S>,
 {
     map(pair(parser1, parser2), |(left, _right)| left)
 }
@@ -1015,14 +1143,14 @@ where
 }
 
 #[doc(hidden)]
-pub fn succeed_helper<'a, A: Clone + 'a>(output: A) -> impl Parser {
-    move |input, location, state| ParseResult::Ok {
+pub fn succeed_helper<'a, A: Clone, S: Clone>(output: A) -> impl Parser<Output = A, State = S> {
+    fn_parser(move |input, location, state: S| ParseResult::Ok {
         input,
         location,
         state,
         output: output.clone(),
         committed: false,
-    }
+    })
 }
 
 /// A parser that succeeds without chomping any characters.
@@ -1049,39 +1177,35 @@ macro_rules! succeed {
 /// Indicate that a parser has reached a dead end.
 ///
 /// "Everything was going fine until I ran into this problem."
-pub fn problem<'a, F1: 'a, F2: 'a, A: 'a, S: Clone + 'a>(
-    message: String,
-    from: F1,
-    to: F2,
-) -> impl Parser
+pub fn problem<F1, F2, A, S: Clone>(message: String, from: F1, to: F2) -> impl Parser<Output = A>
 where
     F1: Fn(Location) -> Location,
     F2: Fn(Location) -> Location,
 {
-    move |_input, location, state| ParseResult::Err {
+    fn_parser(move |_input, location, state: S| ParseResult::Err {
         message: message.clone(),
         from: from(location),
         to: to(location),
         state,
         committed: false,
-    }
+    })
 }
 
 /// Run the left parser, then the right, last keep the right result and discard the left.
-fn right<P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<Output = R2>
+fn right<P1, P2, R1, R2, S: Clone>(parser1: P1, parser2: P2) -> impl Parser<Output = R2, State = S>
 where
-    P1: Parser<Output = R1>,
-    P2: Parser<Output = R2>,
+    P1: Parser<Output = R1, State = S>,
+    P2: Parser<Output = R2, State = S>,
 {
     map(pair(parser1, parser2), |(_left, right)| right)
 }
 
 /// Run the parser one or more times and combine each output into a vector of outputs.
-pub fn one_or_more<P, A>(parser: P) -> impl Parser<Output = Vec<A>>
+pub fn one_or_more<P, A, S: Clone>(parser: P) -> impl Parser<Output = Vec<A>, State = S>
 where
-    P: Parser<Output = A>,
+    P: Parser<Output = A, State = S>,
 {
-    move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1161,21 +1285,21 @@ where
             state,
             committed,
         }
-    }
+    })
 }
 
 /// Run the parser zero or more times until an end delimiter (or end of input) and combine each output into a vector of outputs.
-pub fn zero_or_more_until<'a, P, A, S: Clone + 'a, E, B>(
-    item_name: &'a str,
+pub fn zero_or_more_until<P, A, S: Clone, E, B>(
+    item_name: &'static str,
     parser: P,
-    end_name: &'a str,
+    end_name: &'static str,
     end_parser: E,
-) -> impl Parser<'a, Vec<A>, S>
+) -> impl Parser<Output = Vec<A>, State = S>
 where
-    P: Parser<Output = A>,
+    P: Parser<Output = A, State = S>,
     E: Parser<Output = B, State = ()>,
 {
-    move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1334,21 +1458,21 @@ where
                 }
             }
         }
-    }
+    })
 }
 
 /// Run the parser one or more times until an end delimiter (or end of input) and combine each output into a vector of outputs.
-pub fn one_or_more_until<'a, P, A, S: Clone + 'a, E, B>(
-    item_name: &'a str,
+pub fn one_or_more_until<P, A, S: Clone, E, B>(
+    item_name: &'static str,
     parser: P,
-    end_name: &'a str,
+    end_name: &'static str,
     end_parser: E,
-) -> impl Parser<'a, Vec<A>, S>
+) -> impl Parser<Output = Vec<A>, State = S>
 where
-    P: Parser<Output = A>,
+    P: Parser<Output = A, State = S>,
     E: Parser<Output = B, State = ()>,
 {
-    move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1491,7 +1615,7 @@ where
                 }
             }
         }
-    }
+    })
 }
 
 fn end<'a, P>(parser: P) -> End<P>
@@ -1502,11 +1626,11 @@ where
 }
 
 /// Run the parser zero or more times and combine each output into a vector of outputs.
-pub fn zero_or_more<'a, P, A>(parser: P) -> impl Parser<Output = Vec<A>>
+pub fn zero_or_more<'a, P, A, S: Clone>(parser: P) -> impl Parser<Output = Vec<A>, State = S>
 where
-    P: Parser<Output = A>,
+    P: Parser<Output = A, State = S>,
 {
-    move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1554,85 +1678,85 @@ where
             state,
             committed,
         }
-    }
+    })
 }
 
 /// Match any single unicode grapheme, internally used together with `pred`.
-fn any_grapheme<'a>(expecting: &'a str) -> impl Parser<Output = &'a str> {
-    move |input: &'a str, location: Location, state| match Uni::graphemes(input, true).next() {
-        Some(c) => match c {
-            "\n" | "\r\n" => ParseResult::Ok {
-                input: &input[c.len()..],
-                output: c,
-                location: increment_row(1, location),
+fn any_grapheme<S: Clone>(
+    expecting: &'static str,
+) -> impl Parser<Output = &'static str, State = S> {
+    fn_parser(move |input: &str, location: Location, state: S| {
+        match Uni::graphemes(input, true).next() {
+            Some(c) => match c {
+                "\n" | "\r\n" => ParseResult::Ok {
+                    input: &input[c.len()..],
+                    output: c,
+                    location: increment_row(1, location),
+                    state,
+                    committed: false,
+                },
+                _ => ParseResult::Ok {
+                    input: &input[c.len()..],
+                    output: c,
+                    location: increment_col(grapheme_column_width(c), location),
+                    state,
+                    committed: false,
+                },
+            },
+            _ => ParseResult::Err {
+                message: format!("I'm expecting {} but reached the end of input.", expecting),
+                from: location,
+                to: location,
                 state,
                 committed: false,
             },
-            _ => ParseResult::Ok {
-                input: &input[c.len()..],
-                output: c,
-                location: increment_col(grapheme_column_width(c), location),
-                state,
-                committed: false,
-            },
-        },
-        _ => ParseResult::Err {
-            message: format!("I'm expecting {} but reached the end of input.", expecting),
-            from: location,
-            to: location,
-            state,
-            committed: false,
-        },
-    }
+        }
+    })
 }
 
 /// Match any single character, internally used together with `pred`.
-fn any_char<'a>(expecting: &'a str) -> impl Parser<Output = char> {
-    move |input: &'a str, location: Location, state| match input.chars().next() {
-        Some(c) => match c {
-            '\n' => ParseResult::Ok {
-                input: &input[c.len_utf8()..],
-                output: c,
-                location: increment_row(1, location),
-                state,
-                committed: false,
+fn any_char<S: Clone>(expecting: &'static str) -> impl Parser<Output = char, State = S> {
+    fn_parser(
+        move |input: &str, location: Location, state: S| match input.chars().next() {
+            Some(c) => match c {
+                '\n' => ParseResult::Ok {
+                    input: &input[c.len_utf8()..],
+                    output: c,
+                    location: increment_row(1, location),
+                    state,
+                    committed: false,
+                },
+                _ => ParseResult::Ok {
+                    input: &input[c.len_utf8()..],
+                    output: c,
+                    location: increment_col(char_column_width(c), location),
+                    state,
+                    committed: false,
+                },
             },
-            _ => ParseResult::Ok {
-                input: &input[c.len_utf8()..],
-                output: c,
-                location: increment_col(char_column_width(c), location),
+            _ => ParseResult::Err {
+                message: format!("I'm expecting {} but reached the end of input.", expecting),
+                from: location,
+                to: location,
                 state,
                 committed: false,
             },
         },
-        _ => ParseResult::Err {
-            message: format!("I'm expecting {} but reached the end of input.", expecting),
-            from: location,
-            to: location,
-            state,
-            committed: false,
-        },
-    }
+    )
 }
 
 /// Chomp one grapheme if it passes the test.
-pub fn chomp_if<'a, F: 'a, S: Clone + 'a>(
-    predicate: F,
-    expecting: &'a str,
-) -> impl Parser<Output = ()>
+pub fn chomp_if<'a, F, S: Clone>(predicate: F, expecting: &'a str) -> impl Parser<Output = ()>
 where
     F: Fn(&str) -> bool,
 {
     any_grapheme(expecting)
-        .pred(move |s| predicate(*s), expecting)
+        .pred(move |s| predicate(s), expecting)
         .ignore()
 }
 
 /// Chomp one character if it passes the test.
-pub fn chomp_ifc<'a, F: 'a, S: Clone + 'a>(
-    predicate: F,
-    expecting: &'a str,
-) -> impl Parser<Output = ()>
+pub fn chomp_ifc<F, S: Clone>(predicate: F, expecting: &'static str) -> impl Parser<Output = ()>
 where
     F: Fn(&char) -> bool,
 {
@@ -1640,10 +1764,10 @@ where
 }
 
 /// Chomp zero or more graphemes if they pass the test.
-pub fn chomp_while0<'a, F: 'a, S: Clone + 'a>(
+pub fn chomp_while0<'a, F, S: Clone>(
     predicate: F,
     expecting: &'a str,
-) -> impl Parser<Output = ()>
+) -> impl Parser<Output = (), State = S>
 where
     F: Fn(&str) -> bool,
 {
@@ -1756,11 +1880,7 @@ fn get_difference<'a>(whole_str: &'a str, substr: &'a str) -> &'a str {
     &whole_str[..whole_str.len() - substr.len()]
 }
 
-fn pred<'a, P, F, A>(
-    parser: P,
-    predicate: F,
-    expecting: &'a str,
-) -> impl Parser<Output = A>
+fn pred<'a, P, F, A>(parser: P, predicate: F, expecting: &'a str) -> impl Parser<Output = A>
 where
     P: Parser,
     F: Fn(&A) -> bool,
