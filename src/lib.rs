@@ -8,6 +8,7 @@ mod tests;
 
 use itertools::Itertools;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use unicode_segmentation::UnicodeSegmentation as Uni;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -2278,11 +2279,9 @@ pub fn float<'a, S: Clone>() -> impl Parser<'a, Output = f64, State = S> {
         right(token("."), digits(expecting, true)).map(|digits| ".".to_owned() + &digits),
     ))
     .keep(optional(
-        succeed!(
-            |sign: Option<&'a str>, exponent: String| "e".to_string()
-                + sign.unwrap_or_default()
-                + &exponent
-        )
+        succeed!(|sign: Option<&'a str>, exponent: String| "e".to_string()
+            + sign.unwrap_or_default()
+            + &exponent)
         .skip(either(token("e"), token("E")))
         .keep(optional(either(token("+"), token("-"))))
         .keep(digits(expecting, false)),
@@ -2318,7 +2317,7 @@ fn digits<'a, S: Clone>(
         },
     )
 }
-/*
+
 /// Parse a variable.
 ///
 /// If we want to parse a PascalCase variable excluding three reserved words, we can try something like:
@@ -2348,21 +2347,21 @@ fn digits<'a, S: Clone>(
 ///  "invalid_variable_name_", "I'm expecting a snake_case variable but found `invalid_variable_name_` ended with the separator `_`."
 /// );
 /// ```
-pub fn variable<'a, S, F1, F2, F3>(
+pub fn variable<'a, S: Clone, F1, F2, F3>(
     start: &'a F1,
     inner: &'a F2,
     separator: &'a F3,
     reserved: &'a HashSet<String>,
     expecting: &'a str,
-) -> impl Parser<'a, String, S>
+) -> impl Parser<'a, Output = String, State = S>
 where
-    F1: Fn(&char) -> bool,
-    F2: Fn(&char) -> bool,
-    F3: Fn(&char) -> bool,
+    F1: Fn(char) -> bool,
+    F2: Fn(char) -> bool,
+    F3: Fn(char) -> bool,
 {
     take_chomped(pair(
         chomp_ifc(start, expecting),
-        chomp_while0c(move |c: &char| inner(c) || separator(c), expecting),
+        chomp_while0c(move |c: char| inner(c) || separator(c), expecting),
     ))
     .update(move |input, name, location, state| {
         if reserved.contains(&name) {
@@ -2382,7 +2381,7 @@ where
         } else if name
             .chars()
             .zip(name[1..].chars())
-            .any(|(c, next_c)| separator(&c) && separator(&next_c))
+            .any(|(c, next_c)| separator(c) && separator(next_c))
         {
             ParseResult::Err {
                 message: format!(
@@ -2397,7 +2396,7 @@ where
                 state,
                 committed: false,
             }
-        } else if separator(&name.chars().last().unwrap()) {
+        } else if separator(name.chars().last().unwrap()) {
             ParseResult::Err {
                 message: format!(
                     "I'm expecting {} but found `{}` ended with the separator `{}`.",
@@ -2432,7 +2431,7 @@ pub enum Trailing {
     Optional,
     Mandatory,
 }
-
+/*
 /// Parse a sequence like lists or code blocks.
 ///
 /// Example:
@@ -2473,7 +2472,7 @@ pub fn sequence<'a, A, ItemParser, SpacesParser>(
     trailing: Trailing,
 ) -> impl Parser<'a, Output = Vec<A>>
 where
-    ItemParser: Parser<'a, Output = A>,
+    ItemParser: Parser<'a, Output = A> + Clone,
     SpacesParser: Parser<'a, Output = ()> + Clone,
 {
     wrap(
@@ -2508,17 +2507,18 @@ where
         token(end),
     )
 }
+*/
 
 /// Wrap a parser with two other delimiter parsers
-fn wrap<'a, A, B, C, P1, P2, P3>(
+fn wrap<'a, A, B, C, P1, P2, P3, S: Clone>(
     left_delimiter: P1,
     wrapped: P2,
     right_delimiter: P3,
-) -> impl Parser<'a, Output = B>
+) -> impl Parser<'a, Output = B, State = S>
 where
-    P1: Parser<'a, Output = A>,
-    P2: Parser<'a, Output = B>,
-    P3: Parser<'a, Output = C>,
+    P1: Parser<'a, Output = A, State = S>,
+    P2: Parser<'a, Output = B, State = S>,
+    P3: Parser<'a, Output = C, State = S>,
 {
     right(left_delimiter, left(wrapped, right_delimiter))
 }
@@ -2531,46 +2531,47 @@ pub fn located<'a, P, A>(parser: P) -> impl Parser<'a, Output = Located<A>>
 where
     P: Parser<'a, Output = A>,
 {
-    move |input, location, state| match parser.parse(input, location, state) {
-        ParseResult::Ok {
-            input: cur_input,
-            output,
-            location: cur_location,
-            state: cur_state,
-            committed: cur_committed,
-        } => ParseResult::Ok {
-            input: cur_input,
-            output: Located {
-                value: output,
-                from: Location {
-                    row: location.row,
-                    col: location.col,
+    fn_parser(
+        move |input, location, state| match parser.parse(input, location, state) {
+            ParseResult::Ok {
+                input: cur_input,
+                output,
+                location: cur_location,
+                state: cur_state,
+                committed: cur_committed,
+            } => ParseResult::Ok {
+                input: cur_input,
+                output: Located {
+                    value: output,
+                    from: Location {
+                        row: location.row,
+                        col: location.col,
+                    },
+                    to: Location {
+                        row: cur_location.row,
+                        col: cur_location.col,
+                    },
                 },
-                to: Location {
-                    row: cur_location.row,
-                    col: cur_location.col,
-                },
+                location: cur_location,
+                state: cur_state,
+                committed: cur_committed,
             },
-            location: cur_location,
-            state: cur_state,
-            committed: cur_committed,
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            } => ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            },
         },
-        ParseResult::Err {
-            message,
-            from,
-            to,
-            state,
-            committed,
-        } => ParseResult::Err {
-            message,
-            from,
-            to,
-            state,
-            committed,
-        },
-    }
+    )
 }
-*/
 
 /// Pretty print the error.
 ///
