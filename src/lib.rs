@@ -6,6 +6,7 @@
 #[macro_use]
 mod tests;
 
+use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display};
 use unicode_segmentation::UnicodeSegmentation as Uni;
@@ -1043,12 +1044,11 @@ where
     }
 }
 
-/*
 /// Parse a given token string.
 ///
 /// ⚠️ Newlines are not allowed in tokens.
-pub fn token<'a>(expected: &'a str) -> impl Parser<'a, Output = &'a str> {
-    fn_parser(move |input: &'a str, location: Location, state| {
+pub fn token<'a, S: Clone>(expected: &'a str) -> impl Parser<'a, Output = &'a str, State = S> {
+    fn_parser(move |input: &'a str, location: Location, state: S| {
         let peek = input.get(0..expected.len());
         if peek == Some(expected) {
             ParseResult::Ok {
@@ -1078,7 +1078,6 @@ pub fn token<'a>(expected: &'a str) -> impl Parser<'a, Output = &'a str> {
         }
     })
 }
-*/
 
 fn increment_col(additional_col: usize, location: Location) -> Location {
     Location {
@@ -1186,7 +1185,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn succeed_helper<'a, A: Clone, S: Clone>(output: A) -> impl Parser<'a, Output = A> {
+pub fn succeed_helper<'a, A: Clone, S: Clone>(output: A) -> impl Parser<'a, Output = A, State = S> {
     fn_parser(move |input, location, state: S| ParseResult::Ok {
         input,
         location,
@@ -1898,9 +1897,9 @@ where
 ///   )
 /// }
 /// ```
-pub fn take_chomped<'a, P>(parser: P) -> impl Parser<'a, Output = String>
+pub fn take_chomped<'a, P, S: Clone>(parser: P) -> impl Parser<'a, Output = String, State = S>
 where
-    P: Parser<'a>,
+    P: Parser<'a, State = S>,
 {
     fn_parser(
         move |input, location, state| match parser.parse(input, location, state) {
@@ -1946,22 +1945,21 @@ where
     Pred(parser, predicate, expecting)
 }
 
-/*
 /// Parse a single space character.
-fn space_char<'a>() -> impl Parser<'a, Output = ()> {
+fn space_char<'a, S: Clone>() -> impl Parser<'a, Output = (), State = S> {
     chomp_if(&(|c: &str| c == " "), "a whitespace")
 }
 
 /// Parse a single newline character.
 ///
 /// Handles `\r\n` in Windows and `\n` on other platforms.
-fn newline_char<'a, S>() -> impl Parser<'a, Output = ()> {
-    (move |input, location, state| {
+fn newline_char<'a, S: Clone>() -> impl Parser<'a, Output = (), State = S> {
+    fn_parser(move |input, location, state: S| {
         let mut cur_input: &str = input;
         let mut cur_location: Location = location;
-        let mut cur_state: S = state;
+        let mut cur_state: S = state.clone();
         let result1 =
-            chomp_ifc(&(|c: &char| *c == '\r'), "a carriage return").parse(input, location, state);
+            chomp_ifc(&(|c: char| c == '\r'), "a carriage return").parse(input, location, state);
         if let ParseResult::Ok {
             input,
             location,
@@ -1973,7 +1971,7 @@ fn newline_char<'a, S>() -> impl Parser<'a, Output = ()> {
             cur_location = location;
             cur_state = state;
         }
-        let result = chomp_ifc(&(|c: &char| *c == '\n'), "a newline").parse(
+        let result = chomp_ifc(&(|c: char| c == '\n'), "a newline").parse(
             cur_input,
             cur_location,
             cur_state,
@@ -2001,9 +1999,9 @@ fn newline_char<'a, S>() -> impl Parser<'a, Output = ()> {
 /// Parsers zero or more newline characters, each with indentations in front.
 ///
 /// Indentation can also be `""` (no indentation)
-pub fn newline0<'a, P>(indent_parser: P) -> impl Parser<'a, Output = ()>
+pub fn newline0<'a, P, S: Clone>(indent_parser: P) -> impl Parser<'a, Output = (), State = S>
 where
-    P: Parser<'a, Output = ()>,
+    P: Parser<'a, Output = (), State = S>,
 {
     zero_or_more(pair(indent_parser, newline_char())).ignore()
 }
@@ -2019,17 +2017,17 @@ where
 }
 
 /// Parse zero or more space characters.
-pub fn space0<'a>() -> impl Parser<'a, Output = ()> {
+pub fn space0<'a, S: Clone>() -> impl Parser<'a, Output = (), State = S> {
     zero_or_more(space_char()).ignore()
 }
 
 /// Parse one or more space characters.
-pub fn space1<'a>() -> impl Parser<'a, Output = ()> {
+pub fn space1<'a, S: Clone>() -> impl Parser<'a, Output = (), State = S> {
     one_or_more(space_char()).ignore()
 }
 
 /// Parse an indentation specified the number of spaces.
-pub fn indent<'a>(number_of_spaces: usize) -> impl Parser<'a, Output = ()> {
+pub fn indent<'a, S: Clone>(number_of_spaces: usize) -> impl Parser<'a, Output = (), State = S> {
     repeat(number_of_spaces, space_char())
         .ignore()
         .map_err(move |_| {
@@ -2041,10 +2039,10 @@ pub fn indent<'a>(number_of_spaces: usize) -> impl Parser<'a, Output = ()> {
 }
 
 /// Parse a given number of indentations specified the number of spaces.
-pub fn indents<'a>(
+pub fn indents<'a, S: Clone>(
     number_of_spaces: usize,
     number_of_indents: usize,
-) -> impl Parser<'a, Output = ()> {
+) -> impl Parser<'a, Output = (), State = S> {
     repeat(number_of_indents, indent(number_of_spaces))
         .map_err(move |_| {
             format!(
@@ -2056,7 +2054,6 @@ pub fn indents<'a>(
         })
         .ignore()
 }
-*/
 
 fn plural_suffix(count: usize) -> &'static str {
     if count > 1 {
@@ -2066,13 +2063,15 @@ fn plural_suffix(count: usize) -> &'static str {
     }
 }
 
-/*
 /// Repeat a parser n times
-pub fn repeat<'a, A, P>(times: usize, parser: P) -> impl Parser<'a, Output = Vec<A>>
+pub fn repeat<'a, A, P, S: Clone>(
+    times: usize,
+    parser: P,
+) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
-    P: Parser<'a, Output = A>,
+    P: Parser<'a, Output = A, State = S>,
 {
-    move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -2094,7 +2093,7 @@ where
             location: cur_location,
             state: cur_state,
             committed: cur_committed,
-        } = parser.parse(input, location, state)
+        } = parser.parse(input, location, state.clone())
         {
             if counter >= times {
                 break;
@@ -2114,7 +2113,7 @@ where
             state,
             committed,
         }
-    }
+    })
 }
 
 /// Parse one of many things.
@@ -2133,11 +2132,15 @@ macro_rules! one_of {
 ///
 /// For choosing between more than two parsers, use [`one_of!`](macro.one_of!.html)
 #[doc(hidden)]
-pub fn either<'a, P>(parser1: P, parser2: P) -> impl Parser<'a>
+pub fn either<'a, P1, P2, A, S: Clone>(
+    parser1: P1,
+    parser2: P2,
+) -> impl Parser<'a, Output = A, State = S>
 where
-    P: Parser<'a>,
+    P1: Parser<'a, Output = A, State = S>,
+    P2: Parser<'a, Output = A, State = S>,
 {
-    move |input, location, state| {
+    fn_parser(move |input, location, state| {
         let result = match parser1.parse(input, location, state) {
             ok @ ParseResult::Ok { .. } => ok,
             ParseResult::Err {
@@ -2161,52 +2164,63 @@ where
             }
         };
         result
-    }
-}
-
-/// Optionally parse something. Returns supplied default value if parse failed.
-pub fn optional_with_default<'a, A, P>(default: A, parser: P) -> impl Parser<'a, Output = A>
-where
-    P: Parser<'a, Output = A>,
-{
-    either(parser, move |input, location, state| ParseResult::Ok {
-        input,
-        location,
-        output: default.clone(),
-        state,
-        committed: false,
     })
 }
 
-/// Optionally parse something.
-pub fn optional<'a, A, P>(parser: P) -> impl Parser<'a, Output = Option<A>>
+/// Optionally parse something. Returns supplied default value if parse failed.
+pub fn optional_with_default<'a, A: Clone, P, S: Clone>(
+    default: A,
+    parser: P,
+) -> impl Parser<'a, Output = A, State = S>
 where
-    P: Parser<'a, Output = A>,
+    P: Parser<'a, Output = A, State = S>,
 {
-    either(parser.map(Some), move |input, location, state| {
-        ParseResult::Ok {
+    either(
+        parser,
+        fn_parser(move |input, location, state| ParseResult::Ok {
+            input,
+            location,
+            output: default.clone(),
+            state,
+            committed: false,
+        }),
+    )
+}
+
+/// Optionally parse something.
+pub fn optional<'a, A, P, S: Clone>(parser: P) -> impl Parser<'a, Output = Option<A>, State = S>
+where
+    P: Parser<'a, Output = A, State = S>,
+{
+    either(
+        parser.map(Some),
+        fn_parser(move |input, location, state| ParseResult::Ok {
             input,
             location,
             output: None,
             state,
             committed: false,
-        }
-    })
+        }),
+    )
 }
 
 /// Parse a newline that maybe preceeded by a comment started with `comment_symbol`.
-pub fn newline_with_comment<'a, S>(comment_symbol: &'static str) -> impl Parser<'a, (), S> {
+pub fn newline_with_comment<'a, S: Clone>(
+    comment_symbol: &'a str,
+) -> impl Parser<'a, Output = (), State = S> {
     succeed!(())
         .skip(space0())
         .skip(either(newline_char(), line_comment(comment_symbol)))
 }
 
 /// Parse a line comment started with `comment_symbol`.
-pub fn line_comment<'a>(comment_symbol: &'static str) -> impl Parser<'a, Output = ()> {
+pub fn line_comment<'a, S: Clone>(
+    comment_symbol: &'a str,
+) -> impl Parser<'a, Output = (), State = S> {
     succeed!(())
         .skip(token(comment_symbol))
         .skip(zero_or_more(chomp_ifc(
-            &(|c: &char| *c != '\n' && *c != '\r'),
+            &(|c: char| c != '\n' && c != '\r'),
             "any character",
         )))
         .skip(newline_char())
@@ -2229,7 +2243,7 @@ pub fn line_comment<'a>(comment_symbol: &'static str) -> impl Parser<'a, Output 
 /// run int "123a" == Err ...
 ///
 /// run int "0x1A" == Err ...
-pub fn int<'a>() -> impl Parser<'a, Output = usize> {
+pub fn int<'a, S: Clone>() -> impl Parser<'a, Output = usize, State = S> {
     digits("an integer", false).map(|int_str| int_str.parse().unwrap())
 }
 
@@ -2250,7 +2264,7 @@ pub fn int<'a>() -> impl Parser<'a, Output = usize> {
 /// run float "6.022E23"  == Ok 6.022e23
 ///
 /// run float "6.022e+23" == Ok 6.022e23
-pub fn float<'a>() -> impl Parser<'a, Output = f64> {
+pub fn float<'a, S: Clone>() -> impl Parser<'a, Output = f64, State = S> {
     let expecting = "a floating point number";
     succeed!(
         |whole: String, fraction: Option<String>, exponent: Option<String>| (whole
@@ -2275,9 +2289,12 @@ pub fn float<'a>() -> impl Parser<'a, Output = f64> {
     ))
 }
 
-fn digits<'a>(name: &'a str, allow_leading_zeroes: bool) -> impl Parser<'a, Output = String> {
-    take_chomped(chomp_while1c(&(|c: &char| c.is_digit(10)), name)).update(
-        move |input, digits, location, state| {
+fn digits<'a, S: Clone>(
+    name: &'a str,
+    allow_leading_zeroes: bool,
+) -> impl Parser<'a, Output = String, State = S> {
+    take_chomped(chomp_while1c(&(|c: char| c.is_digit(10)), name)).update(
+        move |input, digits: String, location: Location, state: S| {
             if !allow_leading_zeroes && digits.starts_with('0') && digits.len() > 1 {
                 ParseResult::Err {
                     message: format!("You can't have leading zeroes in {}.", name),
@@ -2301,7 +2318,7 @@ fn digits<'a>(name: &'a str, allow_leading_zeroes: bool) -> impl Parser<'a, Outp
         },
     )
 }
-
+/*
 /// Parse a variable.
 ///
 /// If we want to parse a PascalCase variable excluding three reserved words, we can try something like:
