@@ -1010,6 +1010,49 @@ pub trait Parser<'a> {
     {
         backtrackable(self)
     }
+
+    fn first_of_two<T2>(self) -> OneOfTwo<Self, T2>
+    where
+        Self: Sized,
+        T2: Parser<'a, Output = Self::Output, State = Self::State>,
+    {
+        OneOfTwo::First(self)
+    }
+
+    fn second_of_two<T1>(self) -> OneOfTwo<T1, Self>
+    where
+        Self: Sized,
+        T1: Parser<'a, Output = Self::Output, State = Self::State>,
+    {
+        OneOfTwo::Second(self)
+    }
+
+    fn first_of_three<T2, T3>(self) -> OneOfThree<Self, T2, T3>
+    where
+        Self: Sized,
+        T2: Parser<'a, Output = Self::Output, State = Self::State>,
+        T3: Parser<'a, Output = Self::Output, State = Self::State>,
+    {
+        OneOfThree::First(self)
+    }
+
+    fn second_of_three<T1, T3>(self) -> OneOfThree<T1, Self, T3>
+    where
+        Self: Sized,
+        T1: Parser<'a, Output = Self::Output, State = Self::State>,
+        T3: Parser<'a, Output = Self::Output, State = Self::State>,
+    {
+        OneOfThree::Second(self)
+    }
+
+    fn third_of_three<T1, T2>(self) -> OneOfThree<T1, T2, Self>
+    where
+        Self: Sized,
+        T1: Parser<'a, Output = Self::Output, State = Self::State>,
+        T2: Parser<'a, Output = Self::Output, State = Self::State>,
+    {
+        OneOfThree::Third(self)
+    }
 }
 
 fn and_then<'a, P1, P2, F>(parser: P1, f: F) -> AndThen<P1, F>
@@ -2432,6 +2475,61 @@ pub enum Trailing {
     Mandatory,
 }
 
+pub enum OneOfTwo<T1, T2> {
+    First(T1),
+    Second(T2),
+}
+
+impl<'a, P1, P2, S: Clone> Parser<'a> for OneOfTwo<P1, P2>
+where
+    P1: Parser<'a, State = S>,
+    P2: Parser<'a, Output = P1::Output, State = S>,
+{
+    type Output = P1::Output;
+    type State = S;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        match *self {
+            OneOfTwo::First(ref p) => p.parse(input, location, state),
+            OneOfTwo::Second(ref p) => p.parse(input, location, state),
+        }
+    }
+}
+
+pub enum OneOfThree<T1, T2, T3> {
+    First(T1),
+    Second(T2),
+    Third(T3),
+}
+
+impl<'a, P1, P2, P3, S: Clone> Parser<'a> for OneOfThree<P1, P2, P3>
+where
+    P1: Parser<'a, State = S>,
+    P2: Parser<'a, Output = P1::Output, State = S>,
+    P3: Parser<'a, Output = P1::Output, State = S>,
+{
+    type Output = P1::Output;
+    type State = S;
+
+    fn parse(
+        &self,
+        input: &'a str,
+        location: Location,
+        state: Self::State,
+    ) -> ParseResult<'a, Self::Output, Self::State> {
+        match *self {
+            OneOfThree::First(ref p) => p.parse(input, location, state),
+            OneOfThree::Second(ref p) => p.parse(input, location, state),
+            OneOfThree::Third(ref p) => p.parse(input, location, state),
+        }
+    }
+}
+
 /// Parse a sequence like lists or code blocks.
 ///
 /// Example:
@@ -2489,11 +2587,14 @@ where
                             spaces.clone(),
                         )),
                         match trailing {
-                            Trailing::Forbidden => token("").ignore(),
+                            Trailing::Forbidden => token("").first_of_three(),
                             Trailing::Optional => {
-                                optional(left(token(separator), spaces.clone())).ignore()
+                                optional_with_default("", left(token(separator), spaces.clone()))
+                                    .second_of_three()
                             }
-                            Trailing::Mandatory => left(token(separator), spaces.clone()).ignore(),
+                            Trailing::Mandatory => {
+                                left(token(separator), spaces.clone()).third_of_three()
+                            }
                         },
                     ),
                 ),
