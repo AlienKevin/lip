@@ -6,9 +6,7 @@
 #[macro_use]
 mod tests;
 
-use itertools::Itertools;
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use unicode_segmentation::UnicodeSegmentation as Uni;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -193,7 +191,7 @@ impl<'a, A, S> From<StdParseResult<'a, A, S>> for ParseResult<'a, A, S> {
     }
 }
 
-impl<'a, T, S> ParseResult<'a, T, S> {
+impl<'a, T, S: Clone> ParseResult<'a, T, S> {
     /// Map the parse output to a new value if parse succeeds.
     /// Otherwise, return error as usual.
     pub fn map<U, F: FnOnce(T) -> U>(self, func: F) -> ParseResult<'a, U, S> {
@@ -241,7 +239,7 @@ impl<'a, T, S> ParseResult<'a, T, S> {
             } => ParseResult::Ok {
                 input,
                 location,
-                output: func(output, state),
+                output: func(output, state.clone()),
                 state,
                 committed,
             },
@@ -402,7 +400,7 @@ impl<'a, T, S> ParseResult<'a, T, S> {
     }
 }
 
-struct Map<P, F>(P, F);
+pub struct Map<P, F>(P, F);
 
 impl<'a, A, B, P, F> Parser<'a> for Map<P, F>
 where
@@ -419,11 +417,11 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, B, Self::State> {
-        self.0.parse(input, location, state).map(self.1)
+        self.0.parse(input, location, state).map(&self.1)
     }
 }
 
-struct MapWithState<P, F>(P, F);
+pub struct MapWithState<P, F>(P, F);
 
 impl<'a, A, B, P, F> Parser<'a> for MapWithState<P, F>
 where
@@ -449,7 +447,7 @@ where
                 committed,
             } => ParseResult::Ok {
                 input,
-                output: self.1(output, state),
+                output: self.1(output, state.clone()),
                 location,
                 state,
                 committed,
@@ -471,7 +469,7 @@ where
     }
 }
 
-struct MapErr<P, F>(P, F);
+pub struct MapErr<P, F>(P, F);
 
 impl<'a, P, F> Parser<'a> for MapErr<P, F>
 where
@@ -488,21 +486,21 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        self.0.parse(input, location, state).map_err(self.1)
+        self.0.parse(input, location, state).map_err(&self.1)
     }
 }
 
-struct AndThen<P1, F>(P1, F);
+pub struct AndThen<P1, F>(P1, F);
 
-impl<'a, P1, P2, F> Parser<'a> for AndThen<P1, F>
+impl<'a, P1, P2, F, S: Clone> Parser<'a> for AndThen<P1, F>
 where
-    P1: Parser<'a>,
-    P2: Parser<'a>,
+    P1: Parser<'a, State = S>,
+    P2: Parser<'a, State = S>,
     F: Fn(P1::Output) -> P2,
 {
-    type Output = P1::Output;
+    type Output = P2::Output;
 
-    type State = P1::State;
+    type State = S;
 
     fn parse(
         &self,
@@ -518,23 +516,23 @@ where
     }
 }
 
-struct Pred<'a, P, F>(P, F, &'a str);
+pub struct Pred<'a, P, F>(P, F, &'a str);
 
 impl<'a, P, F> Parser<'a> for Pred<'a, P, F>
 where
     P: Parser<'a>,
-    F: Fn(P::Output) -> bool,
+    F: Fn(&P::Output) -> bool,
 {
     type Output = P::Output;
 
     type State = P::State;
 
-    fn parse<'b>(
+    fn parse(
         &self,
-        input: &'b str,
+        input: &'a str,
         location: Location,
         state: Self::State,
-    ) -> ParseResult<'b, Self::Output, Self::State> {
+    ) -> ParseResult<'a, Self::Output, Self::State> {
         match self.0.parse(input, location, state) {
             ParseResult::Ok {
                 input: cur_input,
@@ -553,11 +551,7 @@ where
                     }
                 } else {
                     ParseResult::Err {
-                        message: format!(
-                            "I'm expecting {} but found {}.",
-                            self.2,
-                            display_token(content),
-                        ),
+                        message: format!("I'm expecting {}", self.2),
                         from: location,
                         to: cur_location,
                         state: cur_state,
@@ -582,7 +576,7 @@ where
     }
 }
 
-struct End<P>(P);
+pub struct End<P>(P);
 
 impl<'a, P> Parser<'a> for End<P>
 where
@@ -598,34 +592,55 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        self.0.update(|input, output, location, state| {
-            if !input.is_empty() {
-                ParseResult::Err {
-                    message: "I'm expecting the end of input.".to_string(),
-                    from: location,
-                    to: location,
-                    state,
-                    committed: false,
-                }
-            } else {
-                ParseResult::Ok {
-                    input,
-                    output,
-                    location,
-                    state,
-                    committed: false,
+        match self.0.parse(input, location, state) {
+            ParseResult::Ok {
+                input,
+                location,
+                state,
+                output,
+                ..
+            } => {
+                if !input.is_empty() {
+                    ParseResult::Err {
+                        message: "I'm expecting the end of input.".to_string(),
+                        from: location,
+                        to: location,
+                        state,
+                        committed: false,
+                    }
+                } else {
+                    ParseResult::Ok {
+                        input,
+                        output,
+                        location,
+                        state,
+                        committed: false,
+                    }
                 }
             }
-        })
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            } => ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            },
+        }
     }
 }
 
-struct UpdateState<P, F>(P, F);
+pub struct UpdateState<P, F>(P, F);
 
 impl<'a, P, F> Parser<'a> for UpdateState<P, F>
 where
     P: Parser<'a>,
-    F: Fn(P::State) -> P::State,
+    F: Fn(&P::Output, P::State) -> P::State,
 {
     type Output = P::Output;
 
@@ -644,19 +659,22 @@ where
                 state: cur_state,
                 output,
                 committed,
-            } => ParseResult::Ok {
-                input: cur_input,
-                output: output.clone(),
-                location: cur_location,
-                state: self.1(output, cur_state),
-                committed,
-            },
+            } => {
+                let new_state = self.1(&output, cur_state);
+                ParseResult::Ok {
+                    input: cur_input,
+                    output,
+                    location: cur_location,
+                    state: new_state,
+                    committed,
+                }
+            }
             err @ ParseResult::Err { .. } => err,
         }
     }
 }
 
-struct Update<P, F>(P, F);
+pub struct Update<P, F>(P, F);
 
 impl<'a, P, A, F> Parser<'a> for Update<P, F>
 where
@@ -667,12 +685,12 @@ where
 
     type State = P::State;
 
-    fn parse<'b>(
+    fn parse(
         &self,
-        input: &'b str,
+        input: &'a str,
         location: Location,
         state: Self::State,
-    ) -> ParseResult<'b, Self::Output, Self::State> {
+    ) -> ParseResult<'a, Self::Output, Self::State> {
         match self.0.parse(input, location, state) {
             ParseResult::Ok {
                 input: cur_input,
@@ -698,7 +716,7 @@ where
     }
 }
 
-struct Ignore<P>(P);
+pub struct Ignore<P>(P);
 
 impl<'a, P> Parser<'a> for Ignore<P>
 where
@@ -718,15 +736,15 @@ where
     }
 }
 
-struct Keep<P1, P2>(P1, P2);
+pub struct Keep<P1, P2>(P1, P2);
 
-impl<'a, P1, P2, A, B, F> Parser<'a> for Keep<P1, P2>
+impl<'a, P1, P2, A, B, F, S: Clone> Parser<'a> for Keep<P1, P2>
 where
     F: Fn(A) -> B,
-    P1: Parser<'a, Output = F>,
-    P2: Parser<'a, Output = A>,
+    P1: Parser<'a, Output = F, State = S>,
+    P2: Parser<'a, Output = A, State = S>,
 {
-    type Output = A;
+    type Output = B;
 
     type State = P1::State;
 
@@ -736,16 +754,22 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        map(pair(self.0, self.1), |(func, arg)| func(arg))
+        self.0
+            .parse(input, location, state)
+            .and_then(|cur_input, func, cur_location, cur_state| {
+                self.1
+                    .parse(cur_input, cur_location, cur_state)
+                    .map(|arg| func(arg))
+            })
     }
 }
 
-struct Skip<P1, P2>(P1, P2);
+pub struct Skip<P1, P2>(P1, P2);
 
-impl<'a, P1, P2> Parser<'a> for Skip<P1, P2>
+impl<'a, P1, P2, S: Clone> Parser<'a> for Skip<P1, P2>
 where
-    P1: Parser<'a>,
-    P2: Parser<'a>,
+    P1: Parser<'a, State = S>,
+    P2: Parser<'a, State = S>,
 {
     type Output = P1::Output;
 
@@ -757,11 +781,17 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        left(self.0, self.1)
+        self.0.parse(input, location, state).and_then(
+            |cur_input, left_output, cur_location, cur_state| {
+                self.1
+                    .parse(cur_input, cur_location, cur_state)
+                    .map(|_| left_output)
+            },
+        )
     }
 }
 
-struct Backtrackable<P>(P);
+pub struct Backtrackable<P>(P);
 
 impl<'a, P> Parser<'a> for Backtrackable<P>
 where
@@ -784,7 +814,7 @@ where
 pub trait Parser<'a> {
     type Output;
 
-    type State;
+    type State: Clone;
 
     /// Parse a given input, starting at
     /// a given location and state.
@@ -872,10 +902,10 @@ pub trait Parser<'a> {
     }
     /// Judge if the output meets the requirement using a predicate function
     /// if the parse succeeds. Otherwise, return error as usual.
-    fn pred<F>(self, predicate: F, expecting: &str) -> Pred<Self, F>
+    fn pred<F>(self, predicate: F, expecting: &'a str) -> Pred<Self, F>
     where
         Self: Sized,
-        F: Fn(Self::Output) -> bool,
+        F: Fn(&Self::Output) -> bool,
     {
         pred(self, predicate, expecting)
     }
@@ -942,10 +972,11 @@ pub trait Parser<'a> {
     ///   .keep(int())
     ///   .run("2, 3", ()); // position == (2, 3)
     /// ```
-    fn keep<P2>(self, arg_parser: P2) -> Keep<Self, P2>
+    fn keep<F, A, B, P2>(self, arg_parser: P2) -> Keep<Self, P2>
     where
         Self: Sized,
-        P2: Parser<'a>,
+        Self::Output: FnOnce(A) -> B,
+        P2: Parser<'a, Output = A>,
     {
         keep(self, arg_parser)
     }
@@ -993,14 +1024,14 @@ use std::marker::PhantomData;
 #[derive(Copy, Clone)]
 pub struct FnParser<F, A, S>(F, PhantomData<A>, PhantomData<S>);
 
-pub fn fn_parser<'a, A, S, F>(f: F) -> FnParser<F, A, S>
+pub fn fn_parser<'a, A, S: Clone, F>(f: F) -> FnParser<F, A, S>
 where
-    F: Fn(&'a str, Location, &S) -> ParseResult<'a, A, S>,
+    F: Fn(&'a str, Location, S) -> ParseResult<'a, A, S>,
 {
     FnParser(f, PhantomData, PhantomData)
 }
 
-impl<'a, A, S, F> Parser<'a> for FnParser<F, A, S>
+impl<'a, A, S: Clone, F> Parser<'a> for FnParser<F, A, S>
 where
     F: Fn(&'a str, Location, S) -> ParseResult<'a, A, S>,
 {
@@ -1012,6 +1043,7 @@ where
     }
 }
 
+/*
 /// Parse a given token string.
 ///
 /// ⚠️ Newlines are not allowed in tokens.
@@ -1046,6 +1078,7 @@ pub fn token<'a>(expected: &'a str) -> impl Parser<'a, Output = &'a str> {
         }
     })
 }
+*/
 
 fn increment_col(additional_col: usize, location: Location) -> Location {
     Location {
@@ -1070,9 +1103,18 @@ fn display_token<T: Display>(token: T) -> String {
     }
 }
 
+impl<'a, A, S: Clone, T: Parser<'a, Output = A, State = S>> Parser<'a> for &T {
+    type Output = A;
+    type State = S;
+
+    fn parse(&self, input: &'a str, location: Location, state: S) -> ParseResult<'a, A, S> {
+        (*self).parse(input, location, state)
+    }
+}
+
 /// Pair up two parsers. Run the left parser, then the right,
 /// and last combine both outputs into a tuple.
-fn pair<'a, P1, P2, R1, R2, S>(
+fn pair<'a, P1, P2, R1, R2, S: Clone>(
     parser1: P1,
     parser2: P2,
 ) -> impl Parser<'a, Output = (R1, R2), State = S>
@@ -1099,9 +1141,9 @@ where
     Map(parser, map_fn)
 }
 
-fn map_with_state<'a, P: 'a, F: 'a, A, B, S>(parser: P, map_fn: F) -> MapWithState<P, F>
+fn map_with_state<'a, P, F, A, B>(parser: P, map_fn: F) -> MapWithState<P, F>
 where
-    P: Parser<'a>,
+    P: Parser<'a, Output = A>,
     F: Fn(P::Output, P::State) -> B,
 {
     MapWithState(parser, map_fn)
@@ -1123,7 +1165,10 @@ where
 }
 
 /// Run the left parser, then the right, last keep the left result and discard the right.
-fn left<'a, P1, P2, R1, R2, S>(parser1: P1, parser2: P2) -> impl Parser<'a, Output = R1, State = S>
+fn left<'a, P1, P2, R1, R2, S: Clone>(
+    parser1: P1,
+    parser2: P2,
+) -> impl Parser<'a, Output = R1, State = S>
 where
     P1: Parser<'a, Output = R1, State = S>,
     P2: Parser<'a, Output = R2, State = S>,
@@ -1141,8 +1186,8 @@ where
 }
 
 #[doc(hidden)]
-pub fn succeed_helper<'a, A: Clone>(output: A) -> impl Parser<'a, Output = A> {
-    fn_parser(move |input, location, state| ParseResult::Ok {
+pub fn succeed_helper<'a, A: Clone, S: Clone>(output: A) -> impl Parser<'a, Output = A> {
+    fn_parser(move |input, location, state: S| ParseResult::Ok {
         input,
         location,
         state,
@@ -1172,6 +1217,14 @@ macro_rules! succeed {
   };
 }
 
+fn end<'a, P>(parser: P) -> End<P>
+where
+    P: Parser<'a>,
+{
+    End(parser)
+}
+
+/*
 /// Indicate that a parser has reached a dead end.
 ///
 /// "Everything was going fine until I ran into this problem."
@@ -1188,9 +1241,13 @@ where
         committed: false,
     })
 }
+*/
 
 /// Run the left parser, then the right, last keep the right result and discard the left.
-fn right<'a, P1, P2, R1, R2, S>(parser1: P1, parser2: P2) -> impl Parser<'a, Output = R2, State = S>
+fn right<'a, P1, P2, R1, R2, S: Clone>(
+    parser1: P1,
+    parser2: P2,
+) -> impl Parser<'a, Output = R2, State = S>
 where
     P1: Parser<'a, Output = R1, State = S>,
     P2: Parser<'a, Output = R2, State = S>,
@@ -1198,6 +1255,7 @@ where
     map(pair(parser1, parser2), |(_left, right)| right)
 }
 
+/*
 /// Run the parser one or more times and combine each output into a vector of outputs.
 pub fn one_or_more<'a, P, A, S>(parser: P) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
@@ -1616,13 +1674,6 @@ where
     })
 }
 
-fn end<'a, P>(parser: P) -> End<P>
-where
-    P: Parser<'a>,
-{
-    End(parser)
-}
-
 /// Run the parser zero or more times and combine each output into a vector of outputs.
 pub fn zero_or_more<'a, P, A, S>(parser: P) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
@@ -1857,19 +1908,21 @@ where
         },
     }
 }
+*/
 
 fn get_difference<'a>(whole_str: &'a str, substr: &'a str) -> &'a str {
     &whole_str[..whole_str.len() - substr.len()]
 }
 
-fn pred<'a, P, F, A>(parser: P, predicate: F, expecting: &'a str) -> impl Parser<'a, Output = A>
+fn pred<'a, P, F>(parser: P, predicate: F, expecting: &'a str) -> Pred<'a, P, F>
 where
     P: Parser<'a>,
-    F: Fn(&A) -> bool,
+    F: Fn(&P::Output) -> bool,
 {
     Pred(parser, predicate, expecting)
 }
 
+/*
 /// Parse a single space character.
 fn space_char<'a>() -> impl Parser<'a, Output = ()> {
     chomp_if(&(|c: &str| c == " "), "a whitespace")
@@ -1979,6 +2032,7 @@ pub fn indents<'a>(
         })
         .ignore()
 }
+*/
 
 fn plural_suffix(count: usize) -> &'static str {
     if count > 1 {
@@ -1988,6 +2042,7 @@ fn plural_suffix(count: usize) -> &'static str {
     }
 }
 
+/*
 /// Repeat a parser n times
 pub fn repeat<'a, A, P>(times: usize, parser: P) -> impl Parser<'a, Output = Vec<A>>
 where
@@ -2474,6 +2529,7 @@ where
         },
     }
 }
+*/
 
 /// Pretty print the error.
 ///
@@ -2497,7 +2553,7 @@ pub fn display_error(source: &str, error_message: String, from: Location, to: Lo
     error_line + "\n" + &error_pointer + "\n" + "⚠️ " + &error_message
 }
 
-fn update_state<'a, P, A, F>(parser: P, f: F) -> impl Parser<'a, Output = A>
+fn update_state<'a, P, F>(parser: P, f: F) -> UpdateState<P, F>
 where
     P: Parser<'a>,
     F: Fn(P::Output, P::State) -> P::State,
