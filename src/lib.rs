@@ -741,7 +741,7 @@ pub struct Keep<P1, P2>(P1, P2);
 
 impl<'a, P1, P2, A, B, F, S: Clone> Parser<'a> for Keep<P1, P2>
 where
-    F: Fn(A) -> B,
+    F: FnOnce(A) -> B,
     P1: Parser<'a, Output = F, State = S>,
     P2: Parser<'a, Output = A, State = S>,
 {
@@ -973,7 +973,7 @@ pub trait Parser<'a> {
     ///   .keep(int())
     ///   .run("2, 3", ()); // position == (2, 3)
     /// ```
-    fn keep<F, A, B, P2>(self, arg_parser: P2) -> Keep<Self, P2>
+    fn keep<A, B, P2>(self, arg_parser: P2) -> Keep<Self, P2>
     where
         Self: Sized,
         Self::Output: FnOnce(A) -> B,
@@ -2279,7 +2279,7 @@ pub fn float<'a, S: Clone>() -> impl Parser<'a, Output = f64, State = S> {
     ))
     .keep(optional(
         succeed!(
-            |sign: Option<&'static str>, exponent: String| "e".to_string()
+            |sign: Option<&'a str>, exponent: String| "e".to_string()
                 + sign.unwrap_or_default()
                 + &exponent
         )
