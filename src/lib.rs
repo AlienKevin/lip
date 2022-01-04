@@ -2431,7 +2431,7 @@ pub enum Trailing {
     Optional,
     Mandatory,
 }
-/*
+
 /// Parse a sequence like lists or code blocks.
 ///
 /// Example:
@@ -2463,7 +2463,7 @@ pub enum Trailing {
 ///   Trailing::Optional),
 /// "[ abc , abc , abc ]", vec!["abc", "abc", "abc"]);
 /// ```
-pub fn sequence<'a, A, ItemParser, SpacesParser>(
+pub fn sequence<'a, A, ItemParser, SpacesParser, S: Clone>(
     start: &'static str,
     item: ItemParser,
     separator: &'static str,
@@ -2472,13 +2472,12 @@ pub fn sequence<'a, A, ItemParser, SpacesParser>(
     trailing: Trailing,
 ) -> impl Parser<'a, Output = Vec<A>>
 where
-    ItemParser: Parser<'a, Output = A> + Clone,
-    SpacesParser: Parser<'a, Output = ()> + Clone,
+    ItemParser: Parser<'a, Output = A, State = S> + Clone,
+    SpacesParser: Parser<'a, Output = (), State = S> + Clone,
 {
     wrap(
         pair(token(start), spaces.clone()),
-        optional_with_default(
-            vec![],
+        optional(
             pair(
                 item.clone(),
                 right(
@@ -2490,11 +2489,11 @@ where
                             spaces.clone(),
                         )),
                         match trailing {
-                            Trailing::Forbidden => token(""),
+                            Trailing::Forbidden => token("").ignore(),
                             Trailing::Optional => {
-                                optional_with_default("", left(token(separator), spaces.clone()))
+                                optional(left(token(separator), spaces.clone())).ignore()
                             }
-                            Trailing::Mandatory => left(token(separator), spaces.clone()),
+                            Trailing::Mandatory => left(token(separator), spaces.clone()).ignore(),
                         },
                     ),
                 ),
@@ -2503,11 +2502,11 @@ where
                 rest_items.insert(0, first_item);
                 rest_items
             }),
-        ),
+        )
+        .map(|items| items.unwrap_or(vec![])),
         token(end),
     )
 }
-*/
 
 /// Wrap a parser with two other delimiter parsers
 fn wrap<'a, A, B, C, P1, P2, P3, S: Clone>(
