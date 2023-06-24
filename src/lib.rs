@@ -2236,16 +2236,37 @@ where
 pub fn display_error(source: &str, error_message: String, from: Location, to: Location) -> String {
     let row = from.row;
     let col = from.col;
-    let error_length = if to.col == from.col {
+    let line = source.lines().nth(row - 1).unwrap();
+    let error_length = if from.row < to.row {
+        std::cmp::max(line.len() + 1 - from.col, 1)
+    } else if to.col == from.col {
         1
     } else {
         to.col - from.col
     };
     let row_tag = row.to_string();
-    let row_tag_len = row_tag.len();
-    let error_line = row_tag + "| " + source.lines().nth(row - 1).unwrap();
+    let row_tag_len = if row < source.lines().count() {
+        (row + 1).to_string().len()
+    } else {
+        row_tag.len()
+    };
+    let prev_line = if row > 1 {
+        format!("{: >width$}", (row - 1).to_string(), width = row_tag_len)
+            + "| "
+            + source.lines().nth(row - 2).unwrap()
+            + "\n"
+    } else {
+        String::new()
+    };
+    let next_line = if row < source.lines().count() {
+        (row + 1).to_string() + "| " + source.lines().nth(row).unwrap() + "\n"
+    } else {
+        String::new()
+    };
+    let error_line = row_tag + "| " + line;
     let error_pointer = " ".repeat(col - 1 + row_tag_len + 2) + &"^".repeat(error_length);
-    let error_report = error_line + "\n" + &error_pointer + "\n" + "⚠️ " + &error_message;
+    let error_report =
+        prev_line + &error_line + "\n" + &error_pointer + "\n" + &next_line + "⚠️ " + &error_message;
     error_report
 }
 
