@@ -24,7 +24,7 @@ enum Value {
     VNull,
 }
 
-fn object<'a>() -> BoxedParser<'a, Object, ()> {
+fn object<'a>() -> impl Parser<'a, Output = Object, State = ()> + Clone {
     // println!("object");
     sequence(
         "{",
@@ -42,17 +42,17 @@ fn object<'a>() -> BoxedParser<'a, Object, ()> {
     .map(|pairs| pairs.iter().cloned().collect())
 }
 
-fn array<'a>() -> BoxedParser<'a, Array, ()> {
+fn array<'a>() -> impl Parser<'a, Output = Array, State = ()> + Clone {
     // println!("array");
     sequence("[", value(), ",", whitespace(), "]", Trailing::Forbidden)
 }
 
-fn value<'a>() -> BoxedParser<'a, Value, ()> {
+fn value<'a>() -> impl Parser<'a, Output = Value, State = ()> + Clone {
     // println!("value");
-    BoxedParser::new(move |input, location, state| value_helper().parse(input, location, state))
+    fn_parser(move |input, location, state| value_helper().parse(input, location, state))
 }
 
-fn value_helper<'a>() -> BoxedParser<'a, Value, ()> {
+fn value_helper<'a>() -> impl Parser<'a, Output = Value, State = ()> {
     // println!("value_helper");
     use Value::*;
     succeed!(identity)
@@ -69,7 +69,7 @@ fn value_helper<'a>() -> BoxedParser<'a, Value, ()> {
         .skip(whitespace())
 }
 
-fn string<'a>() -> BoxedParser<'a, String, ()> {
+fn string<'a>() -> impl Parser<'a, Output = String, State = ()> + Clone {
     // println!("string");
     succeed!(|cs: Vec<char>| cs.into_iter().collect())
         .skip(token("\""))
@@ -103,9 +103,9 @@ fn string<'a>() -> BoxedParser<'a, String, ()> {
         .skip(token("\""))
 }
 
-fn hex_digit<'a>() -> BoxedParser<'a, char, ()> {
+fn hex_digit<'a>() -> impl Parser<'a, Output = char, State = ()> + Clone {
     succeed!(|cs: String| cs.chars().next().unwrap()).keep(take_chomped(chomp_ifc(
-        |c| match *c {
+        |c| match c {
             '0'..='9' | 'a'..='z' | 'A'..='Z' => true,
             _ => false,
         },
@@ -113,25 +113,25 @@ fn hex_digit<'a>() -> BoxedParser<'a, char, ()> {
     )))
 }
 
-fn number<'a>() -> BoxedParser<'a, f64, ()> {
+fn number<'a>() -> impl Parser<'a, Output = f64, State = ()> + Clone {
     // println!("number");
     succeed!(|sign: Option<_>, n: f64| if sign.is_some() { -n } else { n })
         .keep(optional(token("-")))
         .keep(float())
 }
 
-fn whitespace<'a>() -> BoxedParser<'a, (), ()> {
+fn whitespace<'a>() -> impl Parser<'a, Output = (), State = ()> + Clone {
     // println!("whitespace");
     succeed!(|_| ()).keep(zero_or_more(one_of!(
-        chomp_ifc(|c| *c == '\x20', "a space"),
-        chomp_ifc(|c| *c == '\t', "a horizontal tab"),
-        chomp_ifc(|c| *c == '\n', "a newline"),
-        chomp_ifc(|c| *c == '\r', "a carriage return")
+        chomp_ifc(|c| c == '\x20', "a space"),
+        chomp_ifc(|c| c == '\t', "a horizontal tab"),
+        chomp_ifc(|c| c == '\n', "a newline"),
+        chomp_ifc(|c| c == '\r', "a carriage return")
     )))
 }
 
-fn is_non_escape(c: &char) -> bool {
-    match *c {
+fn is_non_escape(c: char) -> bool {
+    match c {
         '\x00'..='\x1F' | '\\' | '\"' => false,
         _ => true,
     }
