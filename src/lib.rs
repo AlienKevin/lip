@@ -525,9 +525,9 @@ where
 #[derive(Clone)]
 pub struct Pred<'a, P, F>(P, F, &'a str);
 
-impl<'a, P, F: Clone> Parser<'a> for Pred<'a, P, F>
+impl<'a, P, F: Clone, Output: std::fmt::Display> Parser<'a> for Pred<'a, P, F>
 where
-    P: Parser<'a>,
+    P: Parser<'a, Output = Output>,
     F: FnOnce(&P::Output) -> bool,
 {
     type Output = P::Output;
@@ -558,7 +558,11 @@ where
                     }
                 } else {
                     ParseResult::Err {
-                        message: format!("I'm expecting {}", self.2),
+                        message: format!(
+                            "I'm expecting {} but found {}.",
+                            self.2,
+                            display_token(content)
+                        ),
                         from: location,
                         to: cur_location,
                         state: cur_state,
@@ -743,7 +747,34 @@ where
         location: Location,
         state: Self::State,
     ) -> ParseResult<'a, Self::Output, Self::State> {
-        map(self, |_| ()).parse(input, location, state)
+        match self.0.parse(input, location, state) {
+            ParseResult::Ok {
+                input,
+                location,
+                state,
+                committed,
+                ..
+            } => ParseResult::Ok {
+                input,
+                location,
+                output: (),
+                state,
+                committed,
+            },
+            ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            } => ParseResult::Err {
+                message,
+                from,
+                to,
+                state,
+                committed,
+            },
+        }
     }
 }
 
