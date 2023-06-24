@@ -897,7 +897,7 @@ pub trait Parser<'a> {
     /// on `ParseResult` turns one `ParseResult` into another.
     fn map<F, NewOutput>(self, map_fn: F) -> Map<Self, F>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         F: Fn(Self::Output) -> NewOutput,
     {
         map(self, map_fn)
@@ -911,7 +911,7 @@ pub trait Parser<'a> {
     /// on `ParseResult` turns one `ParseResult` into another.
     fn map_with_state<F, NewOutput>(self, map_fn: F) -> MapWithState<Self, F>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         F: Fn(Self::Output, Self::State) -> NewOutput,
     {
         map_with_state(self, map_fn)
@@ -924,7 +924,7 @@ pub trait Parser<'a> {
     /// on `ParseResult` turns one `ParseResult` into another.
     fn map_err<F>(self, map_fn: F) -> MapErr<Self, F>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         F: Fn(String) -> String,
     {
         map_err(self, map_fn)
@@ -937,7 +937,7 @@ pub trait Parser<'a> {
     /// on `ParseResult` turns one `ParseResult` into another.
     fn and_then<F, P2, B>(self, f: F) -> AndThen<Self, F>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         P2: Parser<'a, Output = B>,
         F: Fn(Self::Output) -> P2,
     {
@@ -947,7 +947,7 @@ pub trait Parser<'a> {
     /// if the parse succeeds. Otherwise, return error as usual.
     fn pred<F>(self, predicate: F, expecting: &'a str) -> Pred<Self, F>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         F: Fn(&Self::Output) -> bool,
     {
         pred(self, predicate, expecting)
@@ -955,7 +955,7 @@ pub trait Parser<'a> {
     /// Ignore the parse output and return `()` (emtpy tuple)
     fn ignore(self) -> Ignore<Self>
     where
-        Self: Sized + Clone,
+        Self: Sized,
     {
         Ignore(self)
     }
@@ -963,7 +963,7 @@ pub trait Parser<'a> {
     /// Otherwise, return error as usual.
     fn update_state<F>(self, f: F) -> UpdateState<Self, F>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         F: Fn(Self::Output, Self::State) -> Self::State,
     {
         update_state(self, f)
@@ -976,7 +976,7 @@ pub trait Parser<'a> {
     /// choosing `update`.
     fn update<B, F: Clone>(self, f: F) -> Update<Self, F>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         F: FnOnce(&'a str, Self::Output, Location, Self::State) -> ParseResult<'a, B, Self::State>,
     {
         update(self, f)
@@ -997,7 +997,7 @@ pub trait Parser<'a> {
     /// ```
     fn end(self) -> End<Self>
     where
-        Self: Sized + Clone,
+        Self: Sized,
     {
         end(self)
     }
@@ -1017,7 +1017,7 @@ pub trait Parser<'a> {
     /// ```
     fn keep<A, B, P2: Clone>(self, arg_parser: P2) -> Keep<Self, P2>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         Self::Output: FnOnce(A) -> B + Clone,
         P2: Parser<'a, Output = A>,
     {
@@ -1037,9 +1037,9 @@ pub trait Parser<'a> {
     ///   .keep(int())
     ///   .run("2, 3", ()); // position == (2, 3)
     /// ```
-    fn skip<P2: Clone>(self, ignored_parser: P2) -> Skip<Self, P2>
+    fn skip<P2>(self, ignored_parser: P2) -> Skip<Self, P2>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         P2: Parser<'a>,
     {
         Skip(self, ignored_parser)
@@ -1047,14 +1047,14 @@ pub trait Parser<'a> {
 
     fn backtrackable(self) -> Backtrackable<Self>
     where
-        Self: Sized + Clone,
+        Self: Sized,
     {
         backtrackable(self)
     }
 
     fn first_of_two<T2>(self) -> OneOfTwo<Self, T2>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         T2: Parser<'a, Output = Self::Output, State = Self::State>,
     {
         OneOfTwo::First(self)
@@ -1062,7 +1062,7 @@ pub trait Parser<'a> {
 
     fn second_of_two<T1>(self) -> OneOfTwo<T1, Self>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         T1: Parser<'a, Output = Self::Output, State = Self::State>,
     {
         OneOfTwo::Second(self)
@@ -1070,7 +1070,7 @@ pub trait Parser<'a> {
 
     fn first_of_three<T2, T3>(self) -> OneOfThree<Self, T2, T3>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         T2: Parser<'a, Output = Self::Output, State = Self::State>,
         T3: Parser<'a, Output = Self::Output, State = Self::State>,
     {
@@ -1079,7 +1079,7 @@ pub trait Parser<'a> {
 
     fn second_of_three<T1, T3>(self) -> OneOfThree<T1, Self, T3>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         T1: Parser<'a, Output = Self::Output, State = Self::State>,
         T3: Parser<'a, Output = Self::Output, State = Self::State>,
     {
@@ -1088,7 +1088,7 @@ pub trait Parser<'a> {
 
     fn third_of_three<T1, T2>(self) -> OneOfThree<T1, T2, Self>
     where
-        Self: Sized + Clone,
+        Self: Sized,
         T1: Parser<'a, Output = Self::Output, State = Self::State>,
         T2: Parser<'a, Output = Self::Output, State = Self::State>,
     {
@@ -1262,7 +1262,7 @@ where
     map(pair(parser1, parser2), |(left, _right)| left)
 }
 
-fn keep<'a, P1: Clone, P2: Clone, F: Clone, A, B>(parser1: P1, parser2: P2) -> Keep<P1, P2>
+fn keep<'a, P1, P2, F, A, B>(parser1: P1, parser2: P2) -> Keep<P1, P2>
 where
     F: FnOnce(A) -> B,
     P1: Parser<'a, Output = F>,
