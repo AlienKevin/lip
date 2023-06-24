@@ -3,7 +3,7 @@
 //! Lip provides powerful parser combinators for you to
 //! create reusable and flexible parsers.
 
-#[macro_use]
+#[cfg(test)]
 mod tests;
 
 use itertools::Itertools;
@@ -800,9 +800,7 @@ where
         self.0
             .parse(input, location, state)
             .and_then(|cur_input, func, cur_location, cur_state| {
-                self.1
-                    .parse(cur_input, cur_location, cur_state)
-                    .map(func)
+                self.1.parse(cur_input, cur_location, cur_state).map(func)
             })
     }
 }
@@ -2655,9 +2653,7 @@ where
                                 optional_with_default("", left(token(separator), spaces))
                                     .second_of_three()
                             }
-                            Trailing::Mandatory => {
-                                left(token(separator), spaces).third_of_three()
-                            }
+                            Trailing::Mandatory => left(token(separator), spaces).third_of_three(),
                         },
                     ),
                 ),
