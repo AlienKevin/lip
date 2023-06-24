@@ -1931,8 +1931,8 @@ where
 /// This is commonly useful for chomping whiespaces and variable names:
 /// ```
 /// # use lip::*;
-/// fn space0<'a, S>() -> impl Parser<'a, (), S> {
-///   chomp_while0c(|c: &char| *c == ' ', "a whitespace")
+/// fn space0<'a, S: Clone>() -> impl Parser<'a, Output = (), State = S> {
+///   chomp_while0c(|c: char| c == ' ', "a whitespace")
 /// }
 /// ```
 /// See [variable](fn.variable.html) for how this can be used to chomp variable names.
@@ -1962,9 +1962,9 @@ where
 /// This can be used to chomp digits:
 /// ```
 /// # use lip::*;
-/// fn digits<'a, S>() -> impl Parser<'a, String, S> {
+/// fn digits<'a, S: Clone>() -> impl Parser<'a, Output = String, State = S> {
 ///   take_chomped(chomp_while1c(
-///     &(| character: &char | character.is_digit(10)),
+///     &(| character: char | character.is_digit(10)),
 ///     "decimal digits"
 ///   ))
 /// }
@@ -1986,11 +1986,11 @@ where
 /// Maybe you need to parse valid [PHP variables](https://www.w3schools.com/php/php_variables.asp) like `$x` and `$txt`:
 /// ```
 /// # use lip::*;
-/// fn php_variable<'a, S>() -> impl Parser<'a, String, S> {
+/// fn php_variable<'a, S: Clone>() -> impl Parser<'a, Output = String, State = S> {
 ///   take_chomped(succeed!(())
-///     .skip(chomp_ifc(|c: &char| *c == '$', "a '$'"))
-///     .skip(chomp_ifc(|c: &char| c.is_alphabetic() || *c == '_', "a letter or a '_'"))
-///     .skip(chomp_while0c(|c: &char| c.is_alphanumeric() || *c == '_', "a letter, digit, or '_'"))
+///     .skip(chomp_ifc(|c: char| c == '$', "a '$'"))
+///     .skip(chomp_ifc(|c: char| c.is_alphabetic() || c == '_', "a letter or a '_'"))
+///     .skip(chomp_while0c(|c: char| c.is_alphanumeric() || c == '_', "a letter, digit, or '_'"))
 ///   )
 /// }
 /// ```
@@ -2438,7 +2438,7 @@ fn digits<'a, S: Clone>(
 /// # use lip::*;
 /// # use std::collections::HashSet;
 /// assert_succeed(
-///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable"),
+///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| c == '_'), &HashSet::new(), "a snake_case variable"),
 ///  "my_variable_1", "my_variable_1".to_string()
 /// );
 /// ```
@@ -2447,7 +2447,7 @@ fn digits<'a, S: Clone>(
 /// # use lip::*;
 /// # use std::collections::HashSet;
 /// assert_fail(
-///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| *c == '_'), &HashSet::new(), "a snake_case variable"),
+///  variable(&(|c| c.is_lowercase()), &(|c| c.is_lowercase() || c.is_digit(10)), &(|c| c == '_'), &HashSet::new(), "a snake_case variable"),
 ///  "invalid_variable_name_", "I'm expecting a snake_case variable but found `invalid_variable_name_` ended with the separator `_`."
 /// );
 /// ```
