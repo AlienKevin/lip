@@ -127,9 +127,9 @@ pub struct ParseErr<State> {
 
 pub type StdParseResult<'a, A, S> = Result<ParseOk<'a, A, S>, ParseErr<S>>;
 
-impl<'a, A, S> Into<StdParseResult<'a, A, S>> for ParseResult<'a, A, S> {
-    fn into(self) -> StdParseResult<'a, A, S> {
-        match self {
+impl<'a, A, S> From<ParseResult<'a, A, S>> for StdParseResult<'a, A, S> {
+    fn from(val: ParseResult<'a, A, S>) -> Self {
+        match val {
             ParseResult::Ok {
                 input,
                 location,
@@ -802,7 +802,7 @@ where
             .and_then(|cur_input, func, cur_location, cur_state| {
                 self.1
                     .parse(cur_input, cur_location, cur_state)
-                    .map(|arg| func(arg))
+                    .map(func)
             })
     }
 }
@@ -1187,7 +1187,7 @@ fn display_token<T: Display>(token: T) -> String {
     if unicode_column_width(token_str) == 0 {
         "nothing".to_string()
     } else {
-        format!("`{}`", token_str.replace("\n", "\\n"))
+        format!("`{}`", token_str.replace('\n', "\\n"))
     }
 }
 
@@ -1859,7 +1859,7 @@ fn any_grapheme<'a, S: Clone>(
 }
 
 /// Match any single character, internally used together with `pred`.
-fn any_char<'a, S: Clone>(expecting: &'a str) -> impl Parser<'a, Output = char, State = S> + Clone {
+fn any_char<S: Clone>(expecting: &str) -> impl Parser<'_, Output = char, State = S> + Clone {
     fn_parser(
         move |input: &str, location: Location, state| match input.chars().next() {
             Some(c) => match c {
@@ -1890,23 +1890,23 @@ fn any_char<'a, S: Clone>(expecting: &'a str) -> impl Parser<'a, Output = char, 
 }
 
 /// Chomp one grapheme if it passes the test.
-pub fn chomp_if<'a, F: Clone, S: Clone>(
+pub fn chomp_if<F: Clone, S: Clone>(
     predicate: F,
-    expecting: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone
+    expecting: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone
 where
     F: Fn(&str) -> bool,
 {
     any_grapheme(expecting)
-        .pred(move |output| predicate(*output), expecting)
+        .pred(move |output| predicate(output), expecting)
         .ignore()
 }
 
 /// Chomp one character if it passes the test.
-pub fn chomp_ifc<'a, F: Clone, S: Clone>(
+pub fn chomp_ifc<F: Clone, S: Clone>(
     predicate: F,
-    expecting: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone
+    expecting: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone
 where
     F: Fn(char) -> bool,
 {
@@ -1916,10 +1916,10 @@ where
 }
 
 /// Chomp zero or more graphemes if they pass the test.
-pub fn chomp_while0<'a, F: Clone, S: Clone>(
+pub fn chomp_while0<F: Clone, S: Clone>(
     predicate: F,
-    expecting: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone
+    expecting: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone
 where
     F: Fn(&str) -> bool,
 {
@@ -1936,10 +1936,10 @@ where
 /// }
 /// ```
 /// See [variable](fn.variable.html) for how this can be used to chomp variable names.
-pub fn chomp_while0c<'a, F: Clone, S: Clone>(
+pub fn chomp_while0c<F: Clone, S: Clone>(
     predicate: F,
-    expecting: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone
+    expecting: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone
 where
     F: Fn(char) -> bool,
 {
@@ -1947,10 +1947,10 @@ where
 }
 
 /// Chomp one or more graphemes if they pass the test.
-pub fn chomp_while1<'a, F: Clone, S: Clone>(
+pub fn chomp_while1<F: Clone, S: Clone>(
     predicate: F,
-    expecting: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone
+    expecting: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone
 where
     F: Fn(&str) -> bool,
 {
@@ -1970,10 +1970,10 @@ where
 /// }
 /// ```
 /// See [digits](fn.digits.html) for a more complete digits parser with leading zero checks.
-pub fn chomp_while1c<'a, F: Clone, S: Clone>(
+pub fn chomp_while1c<F: Clone, S: Clone>(
     predicate: F,
-    expecting: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone
+    expecting: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone
 where
     F: Fn(char) -> bool,
 {
@@ -2310,18 +2310,18 @@ where
 }
 
 /// Parse a newline that maybe preceeded by a comment started with `comment_symbol`.
-pub fn newline_with_comment<'a, S: Clone>(
-    comment_symbol: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone {
+pub fn newline_with_comment<S: Clone>(
+    comment_symbol: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone {
     succeed!(())
         .skip(space0())
         .skip(either(newline_char(), line_comment(comment_symbol)))
 }
 
 /// Parse a line comment started with `comment_symbol`.
-pub fn line_comment<'a, S: Clone>(
-    comment_symbol: &'a str,
-) -> impl Parser<'a, Output = (), State = S> + Clone {
+pub fn line_comment<S: Clone>(
+    comment_symbol: &str,
+) -> impl Parser<'_, Output = (), State = S> + Clone {
     succeed!(())
         .skip(token(comment_symbol))
         .skip(zero_or_more(chomp_ifc(
@@ -2392,11 +2392,11 @@ pub fn float<'a, S: Clone>() -> impl Parser<'a, Output = f64, State = S> + Clone
     ))
 }
 
-fn digits<'a, S: Clone>(
-    name: &'a str,
+fn digits<S: Clone>(
+    name: &str,
     allow_leading_zeroes: bool,
-) -> impl Parser<'a, Output = String, State = S> + Clone {
-    take_chomped(chomp_while1c(&(|c: char| c.is_digit(10)), name)).update(
+) -> impl Parser<'_, Output = String, State = S> + Clone {
+    take_chomped(chomp_while1c(&(|c: char| c.is_ascii_digit()), name)).update(
         move |input, digits: String, location: Location, state: S| {
             if !allow_leading_zeroes && digits.starts_with('0') && digits.len() > 1 {
                 ParseResult::Err {
@@ -2646,17 +2646,17 @@ where
                     left(
                         zero_or_more(wrap(
                             left(token(separator), spaces.clone()).backtrackable(),
-                            item.clone(),
+                            item,
                             spaces.clone(),
                         )),
                         match trailing {
                             Trailing::Forbidden => token("").first_of_three(),
                             Trailing::Optional => {
-                                optional_with_default("", left(token(separator), spaces.clone()))
+                                optional_with_default("", left(token(separator), spaces))
                                     .second_of_three()
                             }
                             Trailing::Mandatory => {
-                                left(token(separator), spaces.clone()).third_of_three()
+                                left(token(separator), spaces).third_of_three()
                             }
                         },
                     ),
