@@ -488,6 +488,21 @@ fn test_newline_with_comment() {
 fn test_optional() {
     assert_succeed(succeed!(identity).keep(optional(token("abc"))), "", None);
     assert_succeed(
+        optional(token("abc").skip(optional(token("def")))),
+        "",
+        None,
+    );
+    assert_succeed(
+        optional(token("abc").skip(optional(token("def")))),
+        "abc",
+        Some("abc"),
+    );
+    assert_succeed(
+        optional(token("abc").skip(optional(token("def")))),
+        "abcdef",
+        Some("abc"),
+    );
+    assert_succeed(
         succeed!(identity)
             .skip(token("abc"))
             .keep(optional(token("hello"))),

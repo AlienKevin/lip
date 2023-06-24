@@ -2243,7 +2243,7 @@ pub fn display_error(source: &str, error_message: String, from: Location, to: Lo
     };
     let row_tag = row.to_string();
     let row_tag_len = row_tag.len();
-    let error_line = row_tag + "| " + source.split("\n").collect::<Vec<&str>>()[row - 1];
+    let error_line = row_tag + "| " + source.lines().nth(row - 1).unwrap();
     let error_pointer = " ".repeat(col - 1 + row_tag_len + 2) + &"^".repeat(error_length);
     let error_report = error_line + "\n" + &error_pointer + "\n" + "⚠️ " + &error_message;
     error_report
