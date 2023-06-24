@@ -27,77 +27,77 @@ fn test_one_of() {
     );
 }
 
-// #[test]
-// fn test_update() {
-//     #[derive(Debug, Clone, PartialEq)]
-//     struct Counter {
-//         count: usize,
-//     }
-//     assert_eq!(
-//         token("a")
-//             .update(|input, output, location, state: Counter| ParseResult::Ok {
-//                 input,
-//                 output: format!("{}b", output),
-//                 location,
-//                 state: Counter {
-//                     count: state.count + 1
-//                 },
-//                 committed: true,
-//             })
-//             .parse("a", Location { row: 1, col: 1 }, Counter { count: 0 }),
-//         ParseResult::Ok {
-//             input: "",
-//             location: Location { row: 1, col: 2 },
-//             output: "ab".to_string(),
-//             state: Counter { count: 1 },
-//             committed: true,
-//         }
-//     );
-//     let counted_parser = token("a").update(|input, output, location, state: Counter| {
-//         if state.count > 10 {
-//             ParseResult::Err {
-//                 message: "Too many things (more than 10)!".to_string(),
-//                 from: Location {
-//                     col: location.col - 1,
-//                     ..location
-//                 },
-//                 to: location,
-//                 state,
-//                 committed: false,
-//             }
-//         } else {
-//             ParseResult::Ok {
-//                 input,
-//                 output: format!("{}a", output),
-//                 location,
-//                 state: Counter {
-//                     count: state.count + 1,
-//                 },
-//                 committed: true,
-//             }
-//         }
-//     });
-//     assert_eq!(
-//         counted_parser.parse("a", Location { row: 1, col: 1 }, Counter { count: 0 }),
-//         ParseResult::Ok {
-//             input: "",
-//             location: Location { row: 1, col: 2 },
-//             output: "aa".to_string(),
-//             state: Counter { count: 1 },
-//             committed: true,
-//         }
-//     );
-//     assert_eq!(
-//         counted_parser.parse("a", Location { row: 1, col: 1 }, Counter { count: 11 }),
-//         ParseResult::Err {
-//             message: "Too many things (more than 10)!".to_string(),
-//             from: Location { row: 1, col: 1 },
-//             to: Location { row: 1, col: 2 },
-//             state: Counter { count: 11 },
-//             committed: false,
-//         }
-//     );
-// }
+#[test]
+fn test_update() {
+    #[derive(Debug, Clone, PartialEq)]
+    struct Counter {
+        count: usize,
+    }
+    assert_eq!(
+        token("a")
+            .update(|input, output, location, state: Counter| ParseResult::Ok {
+                input,
+                output: format!("{}b", output),
+                location,
+                state: Counter {
+                    count: state.count + 1
+                },
+                committed: true,
+            })
+            .parse("a", Location { row: 1, col: 1 }, Counter { count: 0 }),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 2 },
+            output: "ab".to_string(),
+            state: Counter { count: 1 },
+            committed: true,
+        }
+    );
+    let counted_parser = token("a").update(|input, output, location, state: Counter| {
+        if state.count > 10 {
+            ParseResult::Err {
+                message: "Too many things (more than 10)!".to_string(),
+                from: Location {
+                    col: location.col - 1,
+                    ..location
+                },
+                to: location,
+                state,
+                committed: false,
+            }
+        } else {
+            ParseResult::Ok {
+                input,
+                output: format!("{}a", output),
+                location,
+                state: Counter {
+                    count: state.count + 1,
+                },
+                committed: true,
+            }
+        }
+    });
+    assert_eq!(
+        counted_parser.parse("a", Location { row: 1, col: 1 }, Counter { count: 0 }),
+        ParseResult::Ok {
+            input: "",
+            location: Location { row: 1, col: 2 },
+            output: "aa".to_string(),
+            state: Counter { count: 1 },
+            committed: true,
+        }
+    );
+    assert_eq!(
+        counted_parser.parse("a", Location { row: 1, col: 1 }, Counter { count: 11 }),
+        ParseResult::Err {
+            message: "Too many things (more than 10)!".to_string(),
+            from: Location { row: 1, col: 1 },
+            to: Location { row: 1, col: 2 },
+            state: Counter { count: 11 },
+            committed: false,
+        }
+    );
+}
 
 #[test]
 fn test_token() {

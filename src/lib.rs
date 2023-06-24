@@ -690,12 +690,12 @@ where
 #[derive(Clone)]
 pub struct Update<P, F>(P, F);
 
-impl<'a, P, A, F: Clone> Parser<'a> for Update<P, F>
+impl<'a, P, A, B, F: Clone> Parser<'a> for Update<P, F>
 where
     P: Parser<'a, Output = A>,
-    F: FnOnce(&'a str, A, Location, P::State) -> ParseResult<'a, A, P::State>,
+    F: FnOnce(&'a str, A, Location, P::State) -> ParseResult<'a, B, P::State>,
 {
-    type Output = P::Output;
+    type Output = B;
 
     type State = P::State;
 
@@ -976,7 +976,7 @@ pub trait Parser<'a> {
     /// This is the most general and powerful method of the parser.
     /// Think about using simpler methods like `map` and `map_err` before
     /// choosing `update`.
-    fn update<F: Clone, B>(self, f: F) -> Update<Self, F>
+    fn update<B, F: Clone>(self, f: F) -> Update<Self, F>
     where
         Self: Sized + Clone,
         F: FnOnce(&'a str, Self::Output, Location, Self::State) -> ParseResult<'a, B, Self::State>,
@@ -2768,7 +2768,7 @@ where
 
 fn update<'a, P, A, B, F: Clone>(parser: P, f: F) -> Update<P, F>
 where
-    P: Parser<'a>,
+    P: Parser<'a, Output = A>,
     F: FnOnce(&'a str, A, Location, P::State) -> ParseResult<'a, B, P::State>,
 {
     Update(parser, f)
