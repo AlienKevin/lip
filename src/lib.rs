@@ -2631,7 +2631,7 @@ pub fn sequence<'a, A: Clone, ItemParser, SpacesParser, S: Clone>(
     spaces: SpacesParser,
     end: &'static str,
     trailing: Trailing,
-) -> impl Parser<'a, Output = Vec<A>, State = S>
+) -> impl Parser<'a, Output = Vec<A>, State = S> + Clone
 where
     ItemParser: Parser<'a, Output = A, State = S> + Clone,
     SpacesParser: Parser<'a, Output = (), State = S> + Clone,
