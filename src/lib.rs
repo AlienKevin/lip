@@ -2587,11 +2587,11 @@ where
 /// ```
 /// # use lip::*;
 /// assert_succeed(sequence(
-///   "[",
+///   token("["),
 ///   || token("abc"),
-///   ",",
+///   || token(","),
 ///   || space0(),
-///   "]",
+///   token("]"),
 ///   Trailing::Optional),
 /// "[abc, abc, abc]", vec!["abc", "abc", "abc"]);
 /// ```
@@ -2603,28 +2603,43 @@ where
 /// ```
 /// # use lip::*;
 /// assert_succeed(sequence(
-///   "[",
+///   token("["),
 ///   || token("abc"),
-///   ",",
+///   || token(","),
 ///   || space1(),
-///   "]",
+///   token("]"),
 ///   Trailing::Optional),
 /// "[ abc , abc , abc ]", vec!["abc", "abc", "abc"]);
 /// ```
-pub fn sequence<'a, A: Clone, ItemParser, SpacesParser, S: Clone>(
-    start: &'static str,
+pub fn sequence<
+    'a,
+    A: Clone,
+    StartOutput: Clone,
+    StartParser,
+    ItemParser,
+    SepOutput: Clone,
+    SepParser,
+    SpacesParser,
+    EndOutput: Clone,
+    EndParser,
+    S: Clone,
+>(
+    start: StartParser,
     item: impl Fn() -> ItemParser,
-    separator: &'static str,
+    separator: impl Fn() -> SepParser,
     spaces: impl Fn() -> SpacesParser,
-    end: &'static str,
+    end: EndParser,
     trailing: Trailing,
 ) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
+    StartParser: Parser<'a, Output = StartOutput, State = S>,
     ItemParser: Parser<'a, Output = A, State = S>,
+    SepParser: Parser<'a, Output = SepOutput, State = S>,
     SpacesParser: Parser<'a, Output = (), State = S>,
+    EndParser: Parser<'a, Output = EndOutput, State = S>,
 {
     wrap(
-        pair(token(start), spaces()),
+        pair(start, spaces()),
         optional(
             pair(
                 item(),
@@ -2632,18 +2647,18 @@ where
                     spaces(),
                     left(
                         zero_or_more(wrap(
-                            left(token(separator), spaces()).backtrackable(),
+                            left(separator(), spaces()).backtrackable(),
                             item(),
                             spaces(),
                         )),
                         match trailing {
-                            Trailing::Forbidden => token("").first_of_three(),
+                            Trailing::Forbidden => token("").ignore().first_of_three(),
                             Trailing::Optional => {
-                                optional_with_default("", left(token(separator), spaces()))
+                                optional_with_default((), left(separator().ignore(), spaces()))
                                     .second_of_three()
                             }
                             Trailing::Mandatory => {
-                                left(token(separator), spaces()).third_of_three()
+                                left(separator(), spaces()).ignore().third_of_three()
                             }
                         },
                     ),
@@ -2655,7 +2670,7 @@ where
             }),
         )
         .map(|items| items.unwrap_or(vec![])),
-        token(end),
+        end,
     )
 }
 

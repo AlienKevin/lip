@@ -27,7 +27,7 @@ enum Value {
 fn object<'a>() -> impl Parser<'a, Output = Object, State = ()> {
     // println!("object");
     sequence(
-        "{",
+        token("{"),
         || {
             succeed!(|key, value| (key, value))
                 .skip(whitespace())
@@ -36,9 +36,9 @@ fn object<'a>() -> impl Parser<'a, Output = Object, State = ()> {
                 .skip(token(":"))
                 .keep(value())
         },
-        ",",
+        || token(","),
         || whitespace(),
-        "}",
+        token("}"),
         Trailing::Forbidden,
     )
     .map(|pairs| pairs.iter().cloned().collect())
@@ -47,11 +47,11 @@ fn object<'a>() -> impl Parser<'a, Output = Object, State = ()> {
 fn array<'a>() -> impl Parser<'a, Output = Array, State = ()> {
     // println!("array");
     sequence(
-        "[",
+        token("["),
         || value(),
-        ",",
+        || token(","),
         || whitespace(),
-        "]",
+        token("]"),
         Trailing::Forbidden,
     )
 }

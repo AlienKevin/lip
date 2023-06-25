@@ -360,11 +360,11 @@ fn test_wrap() {
 fn test_sequence() {
     assert_succeed(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || space0(),
-            "]",
+            token("]"),
             Trailing::Optional,
         ),
         "[ abc , abc , abc ]",
@@ -372,11 +372,11 @@ fn test_sequence() {
     );
     assert_succeed(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || space0(),
-            "]",
+            token("]"),
             Trailing::Optional,
         ),
         "[ abc , abc  , abc , ]",
@@ -384,11 +384,11 @@ fn test_sequence() {
     );
     assert_fail(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || space0(),
-            "]",
+            token("]"),
             Trailing::Forbidden,
         ),
         "[ abc , abc  , abc  , ]",
@@ -396,11 +396,11 @@ fn test_sequence() {
     );
     assert_succeed(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || space0(),
-            "]",
+            token("]"),
             Trailing::Mandatory,
         ),
         "[ abc, abc , abc  ,  ]",
@@ -408,11 +408,11 @@ fn test_sequence() {
     );
     assert_fail(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || space0(),
-            "]",
+            token("]"),
             Trailing::Mandatory,
         ),
         "[abc, abc  , abc ]",
@@ -420,11 +420,11 @@ fn test_sequence() {
     );
     assert_succeed(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || space1(),
-            "]",
+            token("]"),
             Trailing::Mandatory,
         ),
         "[ abc , abc  , abc , ]",
@@ -432,9 +432,9 @@ fn test_sequence() {
     );
     assert_succeed(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || {
                 zero_or_more(chomp_ifc(
                     |c: char| c == ' ' || c == '\n' || c == '\r',
@@ -442,7 +442,7 @@ fn test_sequence() {
                 ))
                 .ignore()
             },
-            "]",
+            token("]"),
             Trailing::Optional,
         ),
         "[
@@ -454,9 +454,9 @@ fn test_sequence() {
     );
     assert_succeed(
         sequence(
-            "[",
+            token("["),
             || token("abc"),
-            ",",
+            || token(","),
             || {
                 zero_or_more(chomp_ifc(
                     |c: char| c == ' ' || c == '\n' || c == '\r',
@@ -464,7 +464,7 @@ fn test_sequence() {
                 ))
                 .ignore()
             },
-            "]",
+            token("]"),
             Trailing::Forbidden,
         ),
         "[
