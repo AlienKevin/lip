@@ -1,6 +1,6 @@
 [package]
 name = "lip"
-version = "8.0.2"
+version = "8.1.0"
 authors = ["Kevin Li <kevinli020508@gmail.com>"]
 edition = "2021"
 description = "Lip provides powerful parser combinators for creating reusable and flexible parsers."
@@ -12,7 +12,7 @@ repository = "https://github.com/AlienKevin/lip"
 unicode-segmentation = "1.8.0"
 unicode-width = "0.1.9"
 xi-unicode = "0.3.0"
-itertools = "0.10.3"
+itertools = "0.11.0"
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false }
