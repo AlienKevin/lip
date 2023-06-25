@@ -24,30 +24,39 @@ enum Value {
     VNull,
 }
 
-fn object<'a>() -> impl Parser<'a, Output = Object, State = ()> + Clone {
+fn object<'a>() -> impl Parser<'a, Output = Object, State = ()> {
     // println!("object");
     sequence(
         "{",
-        succeed!(|key, value| (key, value))
-            .skip(whitespace())
-            .keep(string())
-            .skip(whitespace())
-            .skip(token(":"))
-            .keep(value()),
+        || {
+            succeed!(|key, value| (key, value))
+                .skip(whitespace())
+                .keep(string())
+                .skip(whitespace())
+                .skip(token(":"))
+                .keep(value())
+        },
         ",",
-        whitespace(),
+        || whitespace(),
         "}",
         Trailing::Forbidden,
     )
     .map(|pairs| pairs.iter().cloned().collect())
 }
 
-fn array<'a>() -> impl Parser<'a, Output = Array, State = ()> + Clone {
+fn array<'a>() -> impl Parser<'a, Output = Array, State = ()> {
     // println!("array");
-    sequence("[", value(), ",", whitespace(), "]", Trailing::Forbidden)
+    sequence(
+        "[",
+        || value(),
+        ",",
+        || whitespace(),
+        "]",
+        Trailing::Forbidden,
+    )
 }
 
-fn value<'a>() -> impl Parser<'a, Output = Value, State = ()> + Clone {
+fn value<'a>() -> impl Parser<'a, Output = Value, State = ()> {
     // println!("value");
     fn_parser(move |input, location, state| value_helper().parse(input, location, state))
 }
@@ -69,7 +78,7 @@ fn value_helper<'a>() -> impl Parser<'a, Output = Value, State = ()> {
         .skip(whitespace())
 }
 
-fn string<'a>() -> impl Parser<'a, Output = String, State = ()> + Clone {
+fn string<'a>() -> impl Parser<'a, Output = String, State = ()> {
     // println!("string");
     succeed!(|cs: Vec<char>| cs.into_iter().collect())
         .skip(token("\""))
@@ -103,7 +112,7 @@ fn string<'a>() -> impl Parser<'a, Output = String, State = ()> + Clone {
         .skip(token("\""))
 }
 
-fn hex_digit<'a>() -> impl Parser<'a, Output = char, State = ()> + Clone {
+fn hex_digit<'a>() -> impl Parser<'a, Output = char, State = ()> {
     succeed!(|cs: String| cs.chars().next().unwrap()).keep(take_chomped(chomp_ifc(
         |c| match c {
             '0'..='9' | 'a'..='z' | 'A'..='Z' => true,
@@ -113,14 +122,14 @@ fn hex_digit<'a>() -> impl Parser<'a, Output = char, State = ()> + Clone {
     )))
 }
 
-fn number<'a>() -> impl Parser<'a, Output = f64, State = ()> + Clone {
+fn number<'a>() -> impl Parser<'a, Output = f64, State = ()> {
     // println!("number");
     succeed!(|sign: Option<_>, n: f64| if sign.is_some() { -n } else { n })
         .keep(optional(token("-")))
         .keep(float())
 }
 
-fn whitespace<'a>() -> impl Parser<'a, Output = (), State = ()> + Clone {
+fn whitespace<'a>() -> impl Parser<'a, Output = (), State = ()> {
     // println!("whitespace");
     succeed!(|_| ()).keep(zero_or_more(one_of!(
         chomp_ifc(|c| c == '\x20', "a space"),
@@ -138,7 +147,7 @@ fn is_non_escape(c: char) -> bool {
 }
 
 fn bench_json(data: &str, bencher: &mut Bencher<'_>) {
-    let parser = value();
+    let mut parser = value();
     match parser.run(data, ()) {
         ParseResult::Ok { .. } => (),
         ParseResult::Err {
