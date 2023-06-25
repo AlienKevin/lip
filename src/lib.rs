@@ -1332,8 +1332,8 @@ where
 
 /// Run the left parser, then the right, last keep the right result and discard the left.
 fn right<'a, P1, P2, R1: Clone, R2: Clone, S: Clone>(
-    mut parser1: P1,
-    mut parser2: P2,
+    parser1: P1,
+    parser2: P2,
 ) -> impl Parser<'a, Output = R2, State = S>
 where
     P1: Parser<'a, Output = R1, State = S>,

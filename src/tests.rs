@@ -496,14 +496,14 @@ fn test_optional() {
         None,
     );
     assert_fail(
-        succeed!(|sign: Option<_>, n: f64| if let Some(_) = sign { -n } else { n })
+        succeed!(|sign: Option<_>, n: f64| if sign.is_some() { -n } else { n })
             .keep(optional(token("-")))
             .keep(float()),
         "null",
         "I'm expecting a floating point number but found `n`.",
     );
     assert_succeed(
-        succeed!(|sign: Option<_>, n: f64| if let Some(_) = sign { -n } else { n })
+        succeed!(|sign: Option<_>, n: f64| if sign.is_some() { -n } else { n })
             .keep(optional(token("-")))
             .keep(float()),
         "-3.2e2",
