@@ -356,49 +356,92 @@ fn test_wrap() {
     );
 }
 
-/*
 #[test]
 fn test_sequence() {
     assert_succeed(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Optional),
+        sequence(
+            "[",
+            || token("abc"),
+            ",",
+            || space0(),
+            "]",
+            Trailing::Optional,
+        ),
         "[ abc , abc , abc ]",
         vec!["abc", "abc", "abc"],
     );
     assert_succeed(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Optional),
+        sequence(
+            "[",
+            || token("abc"),
+            ",",
+            || space0(),
+            "]",
+            Trailing::Optional,
+        ),
         "[ abc , abc  , abc , ]",
         vec!["abc", "abc", "abc"],
     );
     assert_fail(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Forbidden),
+        sequence(
+            "[",
+            || token("abc"),
+            ",",
+            || space0(),
+            "]",
+            Trailing::Forbidden,
+        ),
         "[ abc , abc  , abc  , ]",
         "I\'m expecting a `]` but found `,`.",
     );
     assert_succeed(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Mandatory),
+        sequence(
+            "[",
+            || token("abc"),
+            ",",
+            || space0(),
+            "]",
+            Trailing::Mandatory,
+        ),
         "[ abc, abc , abc  ,  ]",
         vec!["abc", "abc", "abc"],
     );
     assert_fail(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Mandatory),
+        sequence(
+            "[",
+            || token("abc"),
+            ",",
+            || space0(),
+            "]",
+            Trailing::Mandatory,
+        ),
         "[abc, abc  , abc ]",
         "I\'m expecting a `,` but found `]`.",
     );
     assert_succeed(
-        sequence("[", token("abc"), ",", space1(), "]", Trailing::Mandatory),
+        sequence(
+            "[",
+            || token("abc"),
+            ",",
+            || space1(),
+            "]",
+            Trailing::Mandatory,
+        ),
         "[ abc , abc  , abc , ]",
         vec!["abc", "abc", "abc"],
     );
     assert_succeed(
         sequence(
             "[",
-            token("abc"),
+            || token("abc"),
             ",",
-            &zero_or_more(chomp_ifc(
-                |c: char| c == ' ' || c == '\n' || c == '\r',
-                "space",
-            ))
-            .ignore(),
+            || {
+                zero_or_more(chomp_ifc(
+                    |c: char| c == ' ' || c == '\n' || c == '\r',
+                    "space",
+                ))
+                .ignore()
+            },
             "]",
             Trailing::Optional,
         ),
@@ -412,13 +455,15 @@ fn test_sequence() {
     assert_succeed(
         sequence(
             "[",
-            token("abc"),
+            || token("abc"),
             ",",
-            &zero_or_more(chomp_ifc(
-                |c: char| c == ' ' || c == '\n' || c == '\r',
-                "space",
-            ))
-            .ignore(),
+            || {
+                zero_or_more(chomp_ifc(
+                    |c: char| c == ' ' || c == '\n' || c == '\r',
+                    "space",
+                ))
+                .ignore()
+            },
             "]",
             Trailing::Forbidden,
         ),
@@ -430,7 +475,6 @@ abc
         vec!["abc", "abc", "abc"],
     );
 }
-*/
 
 #[test]
 fn test_keep() {

@@ -2580,7 +2580,6 @@ where
     }
 }
 
-/*
 /// Parse a sequence like lists or code blocks.
 ///
 /// Example:
@@ -2589,9 +2588,9 @@ where
 /// # use lip::*;
 /// assert_succeed(sequence(
 ///   "[",
-///   token("abc"),
+///   || token("abc"),
 ///   ",",
-///   space0(),
+///   || space0(),
 ///   "]",
 ///   Trailing::Optional),
 /// "[abc, abc, abc]", vec!["abc", "abc", "abc"]);
@@ -2605,18 +2604,18 @@ where
 /// # use lip::*;
 /// assert_succeed(sequence(
 ///   "[",
-///   token("abc"),
+///   || token("abc"),
 ///   ",",
-///   space1(),
+///   || space1(),
 ///   "]",
 ///   Trailing::Optional),
 /// "[ abc , abc , abc ]", vec!["abc", "abc", "abc"]);
 /// ```
 pub fn sequence<'a, A: Clone, ItemParser, SpacesParser, S: Clone>(
     start: &'static str,
-    item: ItemParser,
+    item: impl Fn() -> ItemParser,
     separator: &'static str,
-    spaces: SpacesParser,
+    spaces: impl Fn() -> SpacesParser,
     end: &'static str,
     trailing: Trailing,
 ) -> impl Parser<'a, Output = Vec<A>, State = S>
@@ -2625,25 +2624,27 @@ where
     SpacesParser: Parser<'a, Output = (), State = S>,
 {
     wrap(
-        pair(token(start), spaces),
+        pair(token(start), spaces()),
         optional(
             pair(
-                item,
+                item(),
                 right(
-                    spaces,
+                    spaces(),
                     left(
                         zero_or_more(wrap(
-                            left(token(separator), spaces).backtrackable(),
-                            item,
-                            spaces,
+                            left(token(separator), spaces()).backtrackable(),
+                            item(),
+                            spaces(),
                         )),
                         match trailing {
                             Trailing::Forbidden => token("").first_of_three(),
                             Trailing::Optional => {
-                                optional_with_default("", left(token(separator), spaces))
+                                optional_with_default("", left(token(separator), spaces()))
                                     .second_of_three()
                             }
-                            Trailing::Mandatory => left(token(separator), spaces).third_of_three(),
+                            Trailing::Mandatory => {
+                                left(token(separator), spaces()).third_of_three()
+                            }
                         },
                     ),
                 ),
@@ -2656,7 +2657,7 @@ where
         .map(|items| items.unwrap_or(vec![])),
         token(end),
     )
-}*/
+}
 
 /// Wrap a parser with two other delimiter parsers
 fn wrap<'a, A: Clone, B: Clone, C: Clone, P1, P2, P3, S: Clone>(
