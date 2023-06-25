@@ -1300,6 +1300,9 @@ macro_rules! succeed {
   ($value:expr) => {
     succeed_helper($value)
   };
+  () => {
+    succeed_helper(())
+  }
 }
 
 fn end<'a, P>(parser: P) -> End<P>
@@ -1982,7 +1985,7 @@ where
 /// ```
 /// # use lip::*;
 /// fn php_variable<'a, S: Clone>() -> impl Parser<'a, Output = String, State = S> {
-///   take_chomped(succeed!(())
+///   take_chomped(succeed!()
 ///     .skip(chomp_ifc(|c: char| c == '$', "a '$'"))
 ///     .skip(chomp_ifc(|c: char| c.is_alphabetic() || c == '_', "a letter or a '_'"))
 ///     .skip(chomp_while0c(|c: char| c.is_alphanumeric() || c == '_', "a letter, digit, or '_'"))
@@ -2302,14 +2305,14 @@ where
 pub fn newline_with_comment<S: Clone>(
     comment_symbol: &str,
 ) -> impl Parser<'_, Output = (), State = S> {
-    succeed!(())
+    succeed!()
         .skip(space0())
         .skip(either(newline_char(), line_comment(comment_symbol)))
 }
 
 /// Parse a line comment started with `comment_symbol`.
 pub fn line_comment<S: Clone>(comment_symbol: &str) -> impl Parser<'_, Output = (), State = S> {
-    succeed!(())
+    succeed!()
         .skip(token(comment_symbol))
         .skip(zero_or_more(chomp_ifc(
             &(|c: char| c != '\n' && c != '\r'),
@@ -2652,7 +2655,7 @@ where
                             spaces(),
                         )),
                         match trailing {
-                            Trailing::Forbidden => token("").ignore().first_of_three(),
+                            Trailing::Forbidden => succeed!().first_of_three(),
                             Trailing::Optional => {
                                 optional_with_default((), left(separator().ignore(), spaces()))
                                     .second_of_three()
