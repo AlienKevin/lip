@@ -1186,15 +1186,6 @@ fn display_token<T: Display>(token: T) -> String {
     }
 }
 
-impl<'a, A, S: Clone, T: Parser<'a, Output = A, State = S>> Parser<'a> for &T {
-    type Output = A;
-    type State = S;
-
-    fn parse(&mut self, input: &'a str, location: Location, state: S) -> ParseResult<'a, A, S> {
-        (*self).parse(input, location, state)
-    }
-}
-
 /// Pair up two parsers. Run the left parser, then the right,
 /// and last combine both outputs into a tuple.
 fn pair<'a, P1, P2, R1: Clone, R2: Clone, S: Clone>(
@@ -2780,9 +2771,7 @@ pub fn display_error(source: &str, error_message: String, from: Location, to: Lo
     };
     let error_line = row_tag + "| " + line;
     let error_pointer = " ".repeat(col - 1 + row_tag_len + 2) + &"^".repeat(error_length);
-    let error_report =
-        prev_line + &error_line + "\n" + &error_pointer + "\n" + &next_line + "⚠️ " + &error_message;
-    error_report
+    prev_line + &error_line + "\n" + &error_pointer + "\n" + &next_line + "⚠️ " + &error_message
 }
 
 fn update_state<'a, P, F>(parser: P, f: F) -> UpdateState<P, F>
