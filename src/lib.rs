@@ -1345,11 +1345,11 @@ where
 /// Run the parser one or more times and combine each output into a vector of outputs.
 pub fn one_or_more<'a, P: 'a, A: Clone + 'a, S: Clone + 'a>(
     mut parser: P,
-) -> impl Parser<'a, Output = Vec<A>, State = S>
+) -> BoxedParser<'a, Vec<A>, S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    fn_parser(move |mut input, mut location, mut state| {
+    Box::new(move |mut input, mut location, mut state| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1438,12 +1438,12 @@ pub fn zero_or_more_until<'a, P: 'a, A: Clone + 'a, E: 'a, B: 'a, S: Clone + 'a>
     mut parser: P,
     end_name: &'static str,
     mut end_parser: E,
-) -> impl Parser<'a, Output = Vec<A>, State = S>
+) -> BoxedParser<'a, Vec<A>, S>
 where
     P: Parser<'a, Output = A, State = S>,
     E: Parser<'a, Output = B, State = ()>,
 {
-    fn_parser(move |mut input, mut location, mut state| {
+    Box::new(move |mut input, mut location, mut state| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1611,12 +1611,12 @@ pub fn one_or_more_until<'a, P: 'a, A: Clone + 'a, E: 'a, B: 'a, S: Clone + 'a>(
     mut parser: P,
     end_name: &'static str,
     mut end_parser: E,
-) -> impl Parser<'a, Output = Vec<A>, State = S>
+) -> BoxedParser<'a, Vec<A>, S>
 where
     P: Parser<'a, Output = A, State = S>,
     E: Parser<'a, Output = B, State = ()>,
 {
-    fn_parser(move |mut input, mut location, mut state| {
+    Box::new(move |mut input, mut location, mut state| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1765,11 +1765,11 @@ where
 /// Run the parser zero or more times and combine each output into a vector of outputs.
 pub fn zero_or_more<'a, P: 'a, A: Clone + 'a, S: Clone + 'a>(
     mut parser: P,
-) -> impl Parser<'a, Output = Vec<A>, State = S>
+) -> BoxedParser<'a, Vec<A>, S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    fn_parser(move |mut input, mut location, mut state: S| {
+    Box::new(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -2164,11 +2164,11 @@ fn plural_suffix(count: usize) -> &'static str {
 pub fn repeat<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(
     times: usize,
     mut parser: P,
-) -> impl Parser<'a, Output = Vec<A>, State = S>
+) -> BoxedParser<'a, Vec<A>, S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    fn_parser(move |mut input, mut location, mut state: S| {
+    Box::new(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
