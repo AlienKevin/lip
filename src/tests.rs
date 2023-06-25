@@ -1,4 +1,3 @@
-#[cfg(test)]
 use super::*;
 use std::convert::identity;
 
@@ -53,7 +52,7 @@ fn test_update() {
             committed: true,
         }
     );
-    let counted_parser = token("a").update(|input, output, location, state: Counter| {
+    let mut counted_parser = token("a").update(|input, output, location, state: Counter| {
         if state.count > 10 {
             ParseResult::Err {
                 message: "Too many things (more than 10)!".to_string(),
@@ -191,7 +190,7 @@ fn test_variable() {
         variable(
             &(|c| c.is_uppercase()),
             &(|c| c.is_alphanumeric()),
-            &(|c| *c == '.' || *c == '$'),
+            &(|c| c == '.' || c == '$'),
             reserved,
             "a variable name",
         ),
@@ -202,14 +201,14 @@ fn test_variable() {
         variable(
             &(|c| c.is_uppercase()),
             &(|c| c.is_alphanumeric()),
-            &(|c| *c == '.' || *c == '$'),
+            &(|c| c == '.' || c == '$'),
             reserved,
             "a variable name",
         ),
         "Main.Local$$frame3",
         "I'm expecting a variable name but found `Main.Local$$frame3` with duplicated separators.",
     );
-    assert_fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| *c == '.' || *c == '$'), reserved, "a variable name"),
+    assert_fail(variable(&(|c| c.is_uppercase()), &(|c| c.is_alphanumeric()), &(|c| c == '.' || c == '$'), reserved, "a variable name"),
     "Main.Local$frame3$", "I'm expecting a variable name but found `Main.Local$frame3$` ended with the separator `$`.");
 }
 
@@ -340,7 +339,7 @@ fn test_wrap() {
     assert_succeed(
         wrap(
             token("\""),
-            take_chomped(chomp_while0c(|c: &char| *c != '"', "string")),
+            take_chomped(chomp_while0c(|c: char| c != '"', "string")),
             token("\""),
         ),
         "\"I, have 1 string here\"",
@@ -349,7 +348,7 @@ fn test_wrap() {
     assert_fail(
         wrap(
             token("\""),
-            take_chomped(chomp_while0c(|c: &char| *c != '"', "string")),
+            take_chomped(chomp_while0c(|c: char| c != '"', "string")),
             token("\""),
         ),
         "\"I, have 1 string here",
@@ -360,46 +359,90 @@ fn test_wrap() {
 #[test]
 fn test_sequence() {
     assert_succeed(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Optional),
+        sequence(
+            token("["),
+            || token("abc"),
+            || token(","),
+            || space0(),
+            token("]"),
+            Trailing::Optional,
+        ),
         "[ abc , abc , abc ]",
         vec!["abc", "abc", "abc"],
     );
     assert_succeed(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Optional),
+        sequence(
+            token("["),
+            || token("abc"),
+            || token(","),
+            || space0(),
+            token("]"),
+            Trailing::Optional,
+        ),
         "[ abc , abc  , abc , ]",
         vec!["abc", "abc", "abc"],
     );
     assert_fail(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Forbidden),
+        sequence(
+            token("["),
+            || token("abc"),
+            || token(","),
+            || space0(),
+            token("]"),
+            Trailing::Forbidden,
+        ),
         "[ abc , abc  , abc  , ]",
         "I\'m expecting a `]` but found `,`.",
     );
     assert_succeed(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Mandatory),
+        sequence(
+            token("["),
+            || token("abc"),
+            || token(","),
+            || space0(),
+            token("]"),
+            Trailing::Mandatory,
+        ),
         "[ abc, abc , abc  ,  ]",
         vec!["abc", "abc", "abc"],
     );
     assert_fail(
-        sequence("[", token("abc"), ",", space0(), "]", Trailing::Mandatory),
+        sequence(
+            token("["),
+            || token("abc"),
+            || token(","),
+            || space0(),
+            token("]"),
+            Trailing::Mandatory,
+        ),
         "[abc, abc  , abc ]",
         "I\'m expecting a `,` but found `]`.",
     );
     assert_succeed(
-        sequence("[", token("abc"), ",", space1(), "]", Trailing::Mandatory),
+        sequence(
+            token("["),
+            || token("abc"),
+            || token(","),
+            || space1(),
+            token("]"),
+            Trailing::Mandatory,
+        ),
         "[ abc , abc  , abc , ]",
         vec!["abc", "abc", "abc"],
     );
     assert_succeed(
         sequence(
-            "[",
-            token("abc"),
-            ",",
-            zero_or_more(chomp_ifc(
-                |c: &char| *c == ' ' || *c == '\n' || *c == '\r',
-                "space",
-            ))
-            .ignore(),
-            "]",
+            token("["),
+            || token("abc"),
+            || token(","),
+            || {
+                zero_or_more(chomp_ifc(
+                    |c: char| c == ' ' || c == '\n' || c == '\r',
+                    "space",
+                ))
+                .ignore()
+            },
+            token("]"),
             Trailing::Optional,
         ),
         "[
@@ -411,15 +454,17 @@ fn test_sequence() {
     );
     assert_succeed(
         sequence(
-            "[",
-            token("abc"),
-            ",",
-            zero_or_more(chomp_ifc(
-                |c: &char| *c == ' ' || *c == '\n' || *c == '\r',
-                "space",
-            ))
-            .ignore(),
-            "]",
+            token("["),
+            || token("abc"),
+            || token(","),
+            || {
+                zero_or_more(chomp_ifc(
+                    |c: char| c == ' ' || c == '\n' || c == '\r',
+                    "space",
+                ))
+                .ignore()
+            },
+            token("]"),
             Trailing::Forbidden,
         ),
         "[
@@ -510,14 +555,14 @@ fn test_optional() {
         None,
     );
     assert_fail(
-        succeed!(|sign: Option<_>, n: f64| if let Some(_) = sign { -n } else { n })
+        succeed!(|sign: Option<_>, n: f64| if sign.is_some() { -n } else { n })
             .keep(optional(token("-")))
             .keep(float()),
         "null",
         "I'm expecting a floating point number but found `n`.",
     );
     assert_succeed(
-        succeed!(|sign: Option<_>, n: f64| if let Some(_) = sign { -n } else { n })
+        succeed!(|sign: Option<_>, n: f64| if sign.is_some() { -n } else { n })
             .keep(optional(token("-")))
             .keep(float()),
         "-3.2e2",
@@ -612,7 +657,7 @@ fn test_one_or_more_until() {
         succeed!(identity).keep(one_or_more_until(
             "the line",
             succeed!(|line| line)
-                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .keep(take_chomped(chomp_while0c(|c| c != '\n', "line")))
                 .skip(token("\n")),
             "the end symbol",
             token("<end>"),
@@ -636,7 +681,7 @@ this is the 4th line
         succeed!(identity).keep(one_or_more_until(
             "the line",
             succeed!(|line| line)
-                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .keep(take_chomped(chomp_while0c(|c| c != '\n', "line")))
                 .skip(token("\n")),
             "the end symbol",
             token("<end>"),
@@ -658,7 +703,7 @@ this is the 4th line
         succeed!(identity).keep(one_or_more_until(
             "the line",
             succeed!(|line| line)
-                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .keep(take_chomped(chomp_while0c(|c| c != '\n', "line")))
                 .skip(token("\n")),
             "the end symbol",
             token("<end>"),
@@ -883,7 +928,7 @@ fn test_zero_or_more_until() {
         succeed!(identity).keep(zero_or_more_until(
             "a line",
             succeed!(|line| line)
-                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .keep(take_chomped(chomp_while0c(|c| c != '\n', "line")))
                 .skip(token("\n")),
             "an end tag",
             token("<end>"),
@@ -907,7 +952,7 @@ this is the 4th line
         succeed!(identity).keep(zero_or_more_until(
             "a line",
             succeed!(|line| line)
-                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .keep(take_chomped(chomp_while0c(|c| c != '\n', "line")))
                 .skip(token("\n")),
             "an end tag",
             token("<end>"),
@@ -929,7 +974,7 @@ this is the 4th line
         succeed!(identity).keep(zero_or_more_until(
             "a line",
             succeed!(|line| line)
-                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .keep(take_chomped(chomp_while0c(|c| c != '\n', "line")))
                 .skip(token("\n")),
             "an end tag",
             token("<end>"),
@@ -943,7 +988,7 @@ this is the 4th line
         succeed!(identity).keep(zero_or_more_until(
             "a line",
             succeed!(|line| line)
-                .keep(take_chomped(chomp_while0c(|c| *c != '\n', "line")))
+                .keep(take_chomped(chomp_while0c(|c| c != '\n', "line")))
                 .skip(token("\n")),
             "an end tag",
             token("<end>"),
@@ -1217,7 +1262,7 @@ fn test_chomp_if() {
 #[test]
 fn test_chomp_ifc() {
     assert_fail(
-        succeed!(identity).keep(chomp_ifc(|c| *c == 'a', "a letter `a`")),
+        succeed!(identity).keep(chomp_ifc(|c| c == 'a', "a letter `a`")),
         "",
         "I'm expecting a letter `a` but reached the end of input.",
     );

@@ -1,16 +1,28 @@
 [package]
 name = "lip"
-version = "7.0.2"
+version = "8.0.0"
 authors = ["Kevin Li <kevinli020508@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "Lip provides powerful parser combinators for creating reusable and flexible parsers."
 keywords = ["parser", "combinator", "functional"]
 license = "MIT"
 repository = "https://github.com/AlienKevin/lip"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 unicode-segmentation = "1.8.0"
 unicode-width = "0.1.9"
 xi-unicode = "0.3.0"
 itertools = "0.10.3"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false }
+partial_application = "0.2.1"
+
+[[bench]]
+name = "json"
+harness = false
+
+[profile.bench]
+lto = true
+codegen-units = 1
+debug = true
