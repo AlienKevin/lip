@@ -1,6 +1,6 @@
 [package]
 name = "lip"
-version = "8.0.0"
+version = "8.0.1"
 authors = ["Kevin Li <kevinli020508@gmail.com>"]
 edition = "2021"
 description = "Lip provides powerful parser combinators for creating reusable and flexible parsers."
