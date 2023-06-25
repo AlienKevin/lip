@@ -56,9 +56,9 @@ fn array<'a>() -> impl Parser<'a, Output = Array, State = ()> {
     )
 }
 
-fn value<'a>() -> BoxedParser<'a, Value, ()> {
+fn value<'a>() -> impl Parser<'a, Output = Value, State = ()> {
     // println!("value");
-    Box::new(move |input, location, state| value_helper().parse(input, location, state))
+    fn_parser(move |input, location, state| value_helper().parse(input, location, state))
 }
 
 fn value_helper<'a>() -> impl Parser<'a, Output = Value, State = ()> {

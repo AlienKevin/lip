@@ -10,6 +10,7 @@ use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
+use std::marker::PhantomData;
 use unicode_segmentation::UnicodeSegmentation as Uni;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -1105,8 +1106,8 @@ where
 /// Parse a given token string.
 ///
 /// ⚠️ Newlines are not allowed in tokens.
-pub fn token<'a, S: Clone + 'a>(expected: &'a str) -> BoxedParser<&'a str, S> {
-    Box::new(move |input: &'a str, location: Location, state: S| {
+pub fn token<'a, S: Clone + 'a>(expected: &'a str) -> impl Parser<Output = &'a str, State = S> {
+    fn_parser(move |input: &'a str, location: Location, state: S| {
         let peek = input.get(0..expected.len());
         if peek == Some(expected) {
             ParseResult::Ok {
@@ -1165,12 +1166,12 @@ fn display_token<T: Display>(token: T) -> String {
 fn pair<'a, P1: 'a, P2: 'a, R1: Clone + 'a, R2: Clone + 'a, S: Clone + 'a>(
     mut parser1: P1,
     mut parser2: P2,
-) -> BoxedParser<'a, (R1, R2), S>
+) -> impl Parser<'a, Output = (R1, R2), State = S>
 where
     P1: Parser<'a, Output = R1, State = S>,
     P2: Parser<'a, Output = R2, State = S>,
 {
-    Box::new(move |input, location, state| {
+    fn_parser(move |input, location, state| {
         parser1.parse(input, location, state).and_then(
             |cur_input, first_output, cur_location, cur_state| {
                 parser2
@@ -1244,6 +1245,28 @@ impl<'a, A, S: Clone + 'a> Parser<'a> for BoxedParser<'a, A, S> {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct FnParser<F, A, S>(F, PhantomData<A>, PhantomData<S>);
+
+pub fn fn_parser<'a, A, S: Clone, F>(f: F) -> FnParser<F, A, S>
+where
+    F: FnMut(&'a str, Location, S) -> ParseResult<'a, A, S>,
+{
+    FnParser(f, PhantomData, PhantomData)
+}
+
+impl<'a, A, S: Clone, F> Parser<'a> for FnParser<F, A, S>
+where
+    F: FnMut(&'a str, Location, S) -> ParseResult<'a, A, S>,
+{
+    type Output = A;
+    type State = S;
+
+    fn parse(&mut self, input: &'a str, location: Location, state: S) -> ParseResult<'a, A, S> {
+        (self.0)(input, location, state)
+    }
+}
+
 #[doc(hidden)]
 pub fn succeed_helper<'a, A: Clone + 'a, S: Clone + 'a>(output: A) -> BoxedParser<'a, A, S> {
     Box::new(move |input, location, state: S| ParseResult::Ok {
@@ -1293,12 +1316,12 @@ pub fn problem<'a, F1: 'a, F2: 'a, A: 'a, S: Clone + 'a>(
     message: String,
     from: F1,
     to: F2,
-) -> BoxedParser<'a, A, S>
+) -> impl Parser<'a, Output = A, State = S>
 where
     F1: Fn(Location) -> Location,
     F2: Fn(Location) -> Location,
 {
-    Box::new(move |_input, location, state: S| ParseResult::Err {
+    fn_parser(move |_input, location, state: S| ParseResult::Err {
         message: message.clone(),
         from: from(location),
         to: to(location),
@@ -1322,11 +1345,11 @@ where
 /// Run the parser one or more times and combine each output into a vector of outputs.
 pub fn one_or_more<'a, P: 'a, A: Clone + 'a, S: Clone + 'a>(
     mut parser: P,
-) -> BoxedParser<'a, Vec<A>, S>
+) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    Box::new(move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1415,12 +1438,12 @@ pub fn zero_or_more_until<'a, P: 'a, A: Clone + 'a, E: 'a, B: 'a, S: Clone + 'a>
     mut parser: P,
     end_name: &'static str,
     mut end_parser: E,
-) -> BoxedParser<'a, Vec<A>, S>
+) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
     E: Parser<'a, Output = B, State = ()>,
 {
-    Box::new(move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1588,12 +1611,12 @@ pub fn one_or_more_until<'a, P: 'a, A: Clone + 'a, E: 'a, B: 'a, S: Clone + 'a>(
     mut parser: P,
     end_name: &'static str,
     mut end_parser: E,
-) -> BoxedParser<'a, Vec<A>, S>
+) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
     E: Parser<'a, Output = B, State = ()>,
 {
-    Box::new(move |mut input, mut location, mut state| {
+    fn_parser(move |mut input, mut location, mut state| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1742,11 +1765,11 @@ where
 /// Run the parser zero or more times and combine each output into a vector of outputs.
 pub fn zero_or_more<'a, P: 'a, A: Clone + 'a, S: Clone + 'a>(
     mut parser: P,
-) -> BoxedParser<'a, Vec<A>, S>
+) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    Box::new(move |mut input, mut location, mut state: S| {
+    fn_parser(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -1798,8 +1821,10 @@ where
 }
 
 /// Match any single unicode grapheme, internally used together with `pred`.
-fn any_grapheme<'a, S: Clone + 'a>(expecting: &'a str) -> BoxedParser<'a, &'a str, S> {
-    Box::new(move |input: &'a str, location: Location, state| {
+fn any_grapheme<'a, S: Clone + 'a>(
+    expecting: &'a str,
+) -> impl Parser<'a, Output = &'a str, State = S> {
+    fn_parser(move |input: &'a str, location: Location, state| {
         match Uni::graphemes(input, true).next() {
             Some(c) => match c {
                 "\n" | "\r\n" => ParseResult::Ok {
@@ -1829,8 +1854,8 @@ fn any_grapheme<'a, S: Clone + 'a>(expecting: &'a str) -> BoxedParser<'a, &'a st
 }
 
 /// Match any single character, internally used together with `pred`.
-fn any_char<'a, S: Clone + 'a>(expecting: &str) -> BoxedParser<'_, char, S> {
-    Box::new(
+fn any_char<'a, S: Clone + 'a>(expecting: &str) -> impl Parser<'_, Output = char, State = S> {
+    fn_parser(
         move |input: &str, location: Location, state| match input.chars().next() {
             Some(c) => match c {
                 '\n' => ParseResult::Ok {
@@ -1964,11 +1989,13 @@ where
 ///   )
 /// }
 /// ```
-pub fn take_chomped<'a, P: 'a, S: Clone + 'a>(mut parser: P) -> BoxedParser<'a, String, S>
+pub fn take_chomped<'a, P: 'a, S: Clone + 'a>(
+    mut parser: P,
+) -> impl Parser<'a, Output = String, State = S>
 where
     P: Parser<'a, State = S>,
 {
-    Box::new(
+    fn_parser(
         move |input, location, state| match parser.parse(input, location, state) {
             ParseResult::Ok {
                 input: cur_input,
@@ -2020,8 +2047,8 @@ fn space_char<'a, S: Clone + 'a>() -> impl Parser<'a, Output = (), State = S> {
 /// Parse a single newline character.
 ///
 /// Handles `\r\n` in Windows and `\n` on other platforms.
-fn newline_char<'a, S: Clone + 'a>() -> BoxedParser<'a, (), S> {
-    Box::new(move |input, location, state: S| {
+fn newline_char<'a, S: Clone + 'a>() -> impl Parser<'a, Output = (), State = S> {
+    fn_parser(move |input, location, state: S| {
         let mut cur_input: &str = input;
         let mut cur_location: Location = location;
         let mut cur_state: S = state.clone();
@@ -2137,11 +2164,11 @@ fn plural_suffix(count: usize) -> &'static str {
 pub fn repeat<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(
     times: usize,
     mut parser: P,
-) -> BoxedParser<'a, Vec<A>, S>
+) -> impl Parser<'a, Output = Vec<A>, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    Box::new(move |mut input, mut location, mut state: S| {
+    fn_parser(move |mut input, mut location, mut state: S| {
         let mut output = Vec::new();
         let mut committed = false;
 
@@ -2205,12 +2232,12 @@ macro_rules! one_of {
 pub fn either<'a, P1, P2, A: Clone + 'a, S: Clone + 'a>(
     mut parser1: P1,
     mut parser2: P2,
-) -> BoxedParser<'a, A, S>
+) -> impl Parser<'a, Output = A, State = S>
 where
     P1: Parser<'a, Output = A, State = S> + 'a,
     P2: Parser<'a, Output = A, State = S> + 'a,
 {
-    Box::new(move |input, location, state| {
+    fn_parser(move |input, location, state| {
         let result = match parser1.parse(input, location, state) {
             ok @ ParseResult::Ok { .. } => ok,
             ParseResult::Err {
@@ -2241,11 +2268,11 @@ where
 pub fn optional_with_default<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(
     default: A,
     mut parser: P,
-) -> BoxedParser<'a, A, S>
+) -> impl Parser<'a, Output = A, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    Box::new(move |input, location, state| {
+    fn_parser(move |input, location, state| {
         let result = match parser.parse(input, location, state) {
             ok @ ParseResult::Ok { .. } => ok,
             ParseResult::Err {
@@ -2281,11 +2308,11 @@ where
 /// Optionally parse something.
 pub fn optional<'a, A: Clone + 'a, P: 'a, S: Clone + 'a>(
     mut parser: P,
-) -> BoxedParser<'a, Option<A>, S>
+) -> impl Parser<'a, Output = Option<A>, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    Box::new(
+    fn_parser(
         move |input, location, state| match parser.parse(input, location, state) {
             ok @ ParseResult::Ok { .. } => ok.map(Some),
             ParseResult::Err {
@@ -2713,11 +2740,13 @@ where
 ///
 /// You can surround any parser with `located` and remember the location
 /// of the parsed output for later error messaging or text processing.
-pub fn located<'a, P: 'a, A, S: Clone + 'a>(mut parser: P) -> BoxedParser<'a, Located<A>, S>
+pub fn located<'a, P: 'a, A, S: Clone + 'a>(
+    mut parser: P,
+) -> impl Parser<'a, Output = Located<A>, State = S>
 where
     P: Parser<'a, Output = A, State = S>,
 {
-    Box::new(
+    fn_parser(
         move |input, location, state| match parser.parse(input, location, state) {
             ParseResult::Ok {
                 input: cur_input,
