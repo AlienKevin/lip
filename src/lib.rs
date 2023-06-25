@@ -1268,8 +1268,10 @@ where
 }
 
 #[doc(hidden)]
-pub fn succeed_helper<'a, A: Clone + 'a, S: Clone + 'a>(output: A) -> BoxedParser<'a, A, S> {
-    Box::new(move |input, location, state: S| ParseResult::Ok {
+pub fn succeed_helper<'a, A: Clone + 'a, S: Clone + 'a>(
+    output: A,
+) -> impl Parser<'a, Output = A, State = S> {
+    fn_parser(move |input, location, state: S| ParseResult::Ok {
         input,
         location,
         state,
